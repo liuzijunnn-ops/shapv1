@@ -44,7 +44,7 @@ from shap_drift.models import MODEL_CONFIGS, is_tree_model
 from shap_drift.models.explainers import (
     compute_shap, eval_rho, eval_shap, extract_binary_shap, extract_binary_interaction,
 )
-from shap_drift.correction import sdc_corr, sdc_corr_guarded, fsc_corr, fsc_corr_guarded
+from shap_drift.correction import sdc_corr, sdc_corr_guarded, fsc_corr, fsc_corr_guarded, sadc_default
 from shap_drift.correction.baselines import shap_distillation, finetune_baseline, coral_baseline
 from shap_drift.metrics import drift_metrics, per_sample_consistency, evaluate_quality
 from shap_drift.metrics.drift import _compute_kl_divergence
@@ -660,6 +660,22 @@ def step_correction() -> None:
                     sv_fsc_guarded, fsc_guard_info = fsc_corr_guarded(sv_synth, df_cal, features, target, alpha=0.5)
                     fsc_guarded_rho = eval_rho(sv_real, sv_fsc_guarded)
 
+                    # --- SADC (new, v0.3 flagship method) — 20% budget ---
+                    X_cal = df_cal[features].values.astype(np.float32)
+                    y_cal = df_cal[target].values.astype(int)
+                    sadc_rho, sadc_info = orig_rho, {}
+                    try:
+                        sv_sadc, sadc_info = sadc_default(
+                            sv_synth, df_cal, features, target,
+                            X_cal, y_cal, X_te,
+                            model_class, {**mk_base, "random_state": seed},
+                            model_name=model_name, random_state=seed,
+                        )
+                        sadc_rho = eval_rho(sv_real, sv_sadc)
+                    except Exception as exc:
+                        log.debug("  SADC failed (%s/%s/%s seed=%d): %s",
+                                  ds_name, model_name, gn, seed, exc)
+
                     row = {
                         "dataset": ds_name, "model": model_name, "generator": gn, "seed": seed,
                         "orig_rho": orig_rho,
@@ -667,10 +683,13 @@ def step_correction() -> None:
                         "guarded_rho": guarded_rho, "guarded_delta": guarded_rho - orig_rho,
                         "fsc_rho": fsc_rho, "fsc_delta": fsc_rho - orig_rho,
                         "fsc_guarded_rho": fsc_guarded_rho, "fsc_guarded_delta": fsc_guarded_rho - orig_rho,
+                        "sadc_rho": sadc_rho, "sadc_delta": sadc_rho - orig_rho,
                         "effective_alpha": guard_info["effective_alpha"],
                         "dampened": guard_info["dampened"],
                         "rank_agreement": guard_info["reliability"]["rank_agreement"],
                         "ratio_spread": guard_info["reliability"]["ratio_spread"],
+                        "sadc_teacher_weight": sadc_info.get("teacher_weight_mean", None),
+                        "sadc_n_reverted":   len(sadc_info.get("no_harm_reverted", []) or []),
                     }
                     all_results.append(row)
 
@@ -700,22 +719,40 @@ def step_correction() -> None:
 
     pd.DataFrame(reliability_records).to_csv(RELIABILITY_CSV, index=False)
 
-    # Summary
-    for col, label in [("sdc_delta", "SDC-Corr"), ("guarded_delta", "SDC-Guarded"),
-                        ("fsc_delta", "FSC-Corr (20%)"), ("fsc_guarded_delta", "FSC-Guarded (20%)")]:
-        delta = results_df[col].values
+    # Summary — include SADC if present (may be absent from old checkpoints).
+    summary_cols = [
+        ("sdc_delta", "SDC-Corr"),
+        ("guarded_delta", "SDC-Guarded"),
+        ("fsc_delta", "FSC-Corr (20%)"),
+        ("fsc_guarded_delta", "FSC-Guarded (20%)"),
+    ]
+    if "sadc_delta" in results_df.columns:
+        summary_cols.append(("sadc_delta", "SADC (20%)"))
+
+    for col, label in summary_cols:
+        if col not in results_df.columns:
+            continue
+        delta = results_df[col].dropna().values
+        if delta.size == 0:
+            continue
         wins = int((delta > 0).sum())
         harms = int((delta < -0.01).sum())
         log.info("  %-22s: Δρ=%+.3f±%.3f, wins=%d, harms=%d",
-                 label, np.mean(delta), np.std(delta), wins, harms)
+                 label, float(np.mean(delta)), float(np.std(delta)), wins, harms)
 
     summary = {
         "experiment": "guarded_correction",
         "n_results": len(all_results),
-        "overall": {label: float(results_df[col].mean())
-                    for col, label in [("sdc_delta", "SDC-Corr"), ("guarded_delta", "SDC-Guarded"),
-                                       ("fsc_delta", "FSC-Corr"), ("fsc_guarded_delta", "FSC-Guarded")]},
-        "key_finding": "Guarded correction prevents over-correction on high-ρ scenarios",
+        "overall": {
+            label: float(results_df[col].dropna().mean())
+            for col, label in summary_cols
+            if col in results_df.columns and results_df[col].dropna().size > 0
+        },
+        "key_finding": (
+            "SADC fuses correlation+MI+bootstrap-teacher priors and applies "
+            "per-feature closed-form scaling; expected to dominate SDC/FSC "
+            "in low-budget (≤20%) regimes while remaining post-hoc."
+        ),
     }
     with open(OUTPUT_DIR / "guarded_correction_summary.json", "w") as f:
         json.dump(make_serializable(summary), f, indent=2)
@@ -939,10 +976,25 @@ def step_baseline_compare() -> None:
                         except Exception:
                             ft_rho = orig_rho
 
+                        # SADC (v0.3 flagship) — directly comparable at the same budget.
+                        try:
+                            sv_sadc, _ = sadc_default(
+                                sv_synth, df_cal, features, target,
+                                X_cal, y_cal, X_te,
+                                model_class, {**mk_base, "random_state": seed},
+                                model_name=model_name, random_state=seed,
+                            )
+                            sadc_rho = eval_rho(sv_real, sv_sadc)
+                        except Exception:
+                            sadc_rho = orig_rho
+
                         row = {**row_base, "fsc_rho": fsc_rho, "distill_rho": distill_rho,
-                               "ft_rho": ft_rho, "sdc_rho": sdc_rho,
-                               "fsc_delta": fsc_rho - orig_rho, "distill_delta": distill_rho - orig_rho,
-                               "ft_delta": ft_rho - orig_rho, "sdc_delta": sdc_rho - orig_rho}
+                               "ft_rho": ft_rho, "sdc_rho": sdc_rho, "sadc_rho": sadc_rho,
+                               "fsc_delta": fsc_rho - orig_rho,
+                               "distill_delta": distill_rho - orig_rho,
+                               "ft_delta": ft_rho - orig_rho,
+                               "sdc_delta": sdc_rho - orig_rho,
+                               "sadc_delta": sadc_rho - orig_rho}
                         all_results.append(row)
                         checkpoint_counter += 1
                         if checkpoint_counter % 50 == 0:
@@ -997,6 +1049,18 @@ def step_visualize() -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# CASE STUDIES (v0.3 — clinical & financial scenarios)
+# ═══════════════════════════════════════════════════════════════════════════
+def step_case_study() -> None:
+    log.info("=" * 70)
+    log.info("  CASE STUDIES — Clinical & Financial Scenarios")
+    log.info("=" * 70)
+    from shap_drift.case_study import run_case_studies
+    out = run_case_studies()
+    log.info("  ✓ Case study report: %s", out)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # MAIN CLI
 # ═══════════════════════════════════════════════════════════════════════════
 STEPS = {
@@ -1004,11 +1068,12 @@ STEPS = {
     "quality": ("Step 2: Evaluate synthetic quality", step_quality),
     "baseline": ("Step 3: Baseline models", step_baseline),
     "drift": ("Steps 4-9: SHAP drift analysis (full)", step_drift),
-    "correction": ("Correction experiments (SDC + Guarded)", step_correction),
+    "correction": ("Correction experiments (SDC + Guarded + SADC)", step_correction),
     "fsc": ("Few-shot SHAP calibration", step_fsc),
     "ablation": ("Ablation experiments", step_ablation),
-    "baseline_compare": ("Fair baseline comparison", step_baseline_compare),
+    "baseline_compare": ("Fair baseline comparison (incl. SADC)", step_baseline_compare),
     "visualize": ("Generate all plots", step_visualize),
+    "case_study": ("Clinical & financial case studies (HTML)", step_case_study),
 }
 
 

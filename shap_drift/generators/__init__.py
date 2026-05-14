@@ -39,6 +39,24 @@ def _get_default_config(gen_name: str, n_samples: int) -> Dict[str, Any]:
         "TVAE": {
             "epochs": 10 if n_samples < _SMALL_DATASET_THRESHOLD else 50,
         },
+        # Diffusion-based generators — fewer epochs on small data to avoid
+        # over-fitting; larger on big data to fully cover the noise schedule.
+        "TabDDPM": {
+            "epochs":  20 if n_samples < _SMALL_DATASET_THRESHOLD else 50,
+            "T":       100 if n_samples < _SMALL_DATASET_THRESHOLD else 200,
+            "hidden":  128 if n_samples < _SMALL_DATASET_THRESHOLD else 256,
+            "depth":   3,
+            "batch":   min(256, max(32, n_samples // 32)),
+        },
+        "TabSyn": {
+            "vae_epochs":  15 if n_samples < _SMALL_DATASET_THRESHOLD else 30,
+            "diff_epochs": 15 if n_samples < _SMALL_DATASET_THRESHOLD else 40,
+            "T":           100 if n_samples < _SMALL_DATASET_THRESHOLD else 200,
+            "hidden":      128 if n_samples < _SMALL_DATASET_THRESHOLD else 256,
+            "latent_dim":  8 if n_samples < _SMALL_DATASET_THRESHOLD else 16,
+            "depth":       3,
+            "batch":       min(256, max(32, n_samples // 32)),
+        },
     }
     if n_samples < _SMALL_DATASET_THRESHOLD:
         if gen_name == "CTGAN":
@@ -50,12 +68,39 @@ def _get_default_config(gen_name: str, n_samples: int) -> Dict[str, Any]:
     return configs.get(gen_name, {})
 
 
+def _build_synthesizer(gen_name: str, config: Dict[str, Any]):
+    """Factory: return the appropriate synthesizer instance for ``gen_name``.
+
+    Legacy generators (GC/CTGAN/TVAE) go through the ``stg.TableSynthesizer``
+    wrapper; v0.3 diffusion generators (TabDDPM/TabSyn) use the
+    in-package reference implementations in ``shap_drift.generators.diffusion``.
+    """
+    if gen_name in ("TabDDPM",):
+        from shap_drift.generators.diffusion import TabDDPMSynthesizer
+        return TabDDPMSynthesizer(**config)
+    if gen_name in ("TabSyn",):
+        from shap_drift.generators.diffusion import TabSynSynthesizer
+        return TabSynSynthesizer(**config)
+    # Legacy path — wraps SDV/CTGAN/TVAE via stg.
+    from stg.tableSynthesizer import TableSynthesizer
+    return TableSynthesizer(model=gen_name, config=config)
+
+
 # ---------------------------------------------------------------------------
 # Sampling helpers
 # ---------------------------------------------------------------------------
 def _sample(synth: Any, n: int) -> pd.DataFrame:
-    """Sample from GaussianCopula / CTGAN / TVAE."""
-    result = synth.sample(n, return_dataframe=True)
+    """Sample from any registered synthesizer (legacy or diffusion).
+
+    Tries ``synth.sample(n, return_dataframe=True)`` first (legacy API),
+    falls back to plain ``synth.sample(n)`` for newer adapters that don't
+    accept the ``return_dataframe`` keyword.
+    """
+    try:
+        result = synth.sample(n, return_dataframe=True)
+    except TypeError:
+        # New-style adapters: positional only.
+        result = synth.sample(n)
     if isinstance(result, pd.DataFrame):
         return result
     # Fallback: raw tensor → DataFrame
@@ -79,8 +124,6 @@ def generate_one(
     config_override: Optional[Dict[str, Any]] = None,
 ) -> bool:
     """Generate one synthetic dataset.  Returns True on success."""
-    from stg.tableSynthesizer import TableSynthesizer
-
     n = len(df_work)
     suffix = GENERATOR_SUFFIX.get(gen_name, gen_name.lower()[:4])
     out_path = OUTPUT_DIR / f"{ds_name}_{suffix}.csv"
@@ -94,8 +137,14 @@ def generate_one(
         if config_override:
             default_config.update(config_override)
 
-        synth = TableSynthesizer(model=gen_name, config=default_config)
-        synth.fit(df_work)
+        synth = _build_synthesizer(gen_name, default_config)
+        # TabDDPM/TabSyn need to know which column is the binary target so
+        # they don't try to diffuse it (the column is bootstrap-resampled
+        # from the empirical distribution at sample time).
+        if gen_name in ("TabDDPM", "TabSyn"):
+            synth.fit(df_work, target_col=target_col)
+        else:
+            synth.fit(df_work)
         df_synth = _sample(synth, n)
 
         # Ensure columns match

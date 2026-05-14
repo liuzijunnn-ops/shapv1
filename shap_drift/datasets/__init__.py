@@ -66,6 +66,15 @@ from shap_drift.datasets.injury_1798 import load_injury_1798, INJ_FEATURES, INJ_
 from shap_drift.datasets.california_housing import load_california_housing, CH_FEATURES, CH_TARGET
 from shap_drift.datasets.german_credit import load_german_credit, GC_FEATURES, GC_TARGET
 from shap_drift.datasets.adult import load_adult, ADULT_FEATURES, ADULT_TARGET
+# v0.3 additions — broader coverage along 4 axes:
+#   * Diabetes  — clinical, small N, near-balanced (P0 case-study target)
+#   * CovType   — multi-class binarized, large N, mostly continuous
+#   * Higgs     — high-dim (28 features), near-balanced, physics
+#   * Thyroid   — heavily imbalanced (~26% positive), mixed types
+from shap_drift.datasets.diabetes import load_diabetes, DB_FEATURES, DB_TARGET
+from shap_drift.datasets.covtype import load_covtype, CT_FEATURES, CT_TARGET
+from shap_drift.datasets.higgs import load_higgs, HG_FEATURES, HG_TARGET
+from shap_drift.datasets.thyroid import load_thyroid, TH_FEATURES, TH_TARGET
 
 
 DATASETS: Dict[str, DatasetConfig] = {
@@ -105,6 +114,30 @@ DATASETS: Dict[str, DatasetConfig] = {
         features=ADULT_FEATURES,
         target=ADULT_TARGET,
     ),
+    "Diabetes": DatasetConfig(
+        name="Diabetes",
+        loader=load_diabetes,
+        features=DB_FEATURES,
+        target=DB_TARGET,
+    ),
+    "CovType": DatasetConfig(
+        name="CovType",
+        loader=load_covtype,
+        features=CT_FEATURES,
+        target=CT_TARGET,
+    ),
+    "Higgs": DatasetConfig(
+        name="Higgs",
+        loader=load_higgs,
+        features=HG_FEATURES,
+        target=HG_TARGET,
+    ),
+    "Thyroid": DatasetConfig(
+        name="Thyroid",
+        loader=load_thyroid,
+        features=TH_FEATURES,
+        target=TH_TARGET,
+    ),
 }
 
 DATASET_ORDER: List[str] = list(DATASETS.keys())
@@ -116,6 +149,10 @@ DS_LABELS: Dict[str, str] = {
     "CaliforniaHousing": "California Housing",
     "GermanCredit": "German Credit",
     "Adult": "Adult Income",
+    "Diabetes": "Pima Diabetes",
+    "CovType": "Forest Cover Type",
+    "Higgs": "Higgs Boson",
+    "Thyroid": "Thyroid Disease",
 }
 
 DS_COLORS: Dict[str, str] = {
@@ -125,4 +162,8 @@ DS_COLORS: Dict[str, str] = {
     "CaliforniaHousing": "#43A047",
     "GermanCredit": "#FB8C00",
     "Adult": "#8E24AA",
+    "Diabetes": "#00ACC1",
+    "CovType": "#558B2F",
+    "Higgs": "#5E35B1",
+    "Thyroid": "#EF6C00",
 }

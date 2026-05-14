@@ -28,8 +28,20 @@ GENERATOR_SUFFIX: Dict[str, str] = {
     "GaussianCopula": "gc",
     "CTGAN": "ctgan",
     "TVAE": "tvae",
+    # v0.3 — modern diffusion-based generators
+    "TabDDPM": "tabddpm",
+    "TabSyn": "tabsyn",
 }
 GENERATORS: List[Tuple[str, str]] = list(GENERATOR_SUFFIX.items())
+
+# Paradigm registry — used by analysis scripts to group generators.
+GENERATOR_PARADIGM: Dict[str, str] = {
+    "GaussianCopula": "statistical",
+    "CTGAN": "gan",
+    "TVAE": "vae",
+    "TabDDPM": "diffusion",
+    "TabSyn": "latent_diffusion",
+}
 
 # ---------------------------------------------------------------------------
 # Seeds (10 for higher statistical power)
@@ -44,6 +56,8 @@ GEN_COLORS: Dict[str, str] = {
     "GaussianCopula": "#2ecc71",
     "CTGAN": "#e74c3c",
     "TVAE": "#3498db",
+    "TabDDPM": "#9b59b6",   # purple — diffusion
+    "TabSyn": "#e67e22",    # orange — latent diffusion
 }
 
 # ---------------------------------------------------------------------------
