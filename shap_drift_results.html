@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>SHAP Explanation Drift — 结果分析报告</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --fg:#0d1117; --muted:#475569; --line:#e2e8f0; --line-strong:#94a3b8;
+    --accent:#1e40af; --accent2:#0f766e; --warn:#b45309; --danger:#b91c1c;
+    --good:#15803d;
+    --cell-bad:#fee2e2; --cell-mid:#fef3c7; --cell-good:#dcfce7;
+    --bg:#ffffff; --bg-soft:#f8fafc; --bg-card:#ffffff;
+  }
+  *{ box-sizing:border-box; }
+  body{
+    font-family: -apple-system, "SF Pro Text", "Helvetica Neue", Arial,
+                 "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    color: var(--fg); background: var(--bg-soft);
+    margin:0; line-height:1.55; font-size:14.5px;
+  }
+  .page{ max-width: 1240px; margin: 0 auto; padding: 32px 28px 64px; }
+  header.banner{
+    background: linear-gradient(135deg, #0f172a 0%, #1e40af 100%);
+    color: white; border-radius: 16px; padding: 32px 36px;
+    box-shadow: 0 10px 30px -10px rgba(15,23,42,0.45);
+  }
+  header.banner h1{ margin:0 0 10px; font-size: 26px; letter-spacing: 0.2px; }
+  header.banner p{ margin: 4px 0; opacity: 0.9; font-size: 13.5px; }
+  header.banner .tag{
+    display:inline-block; background: rgba(255,255,255,0.14);
+    padding: 4px 10px; border-radius: 999px; font-size: 12px;
+    margin-right: 6px;
+  }
+  h2{
+    font-size: 19px; margin: 38px 0 4px; padding-bottom: 8px;
+    border-bottom: 2px solid var(--line); color: var(--fg);
+    display:flex; align-items:center; gap:10px;
+  }
+  h2 .num{
+    width: 28px; height: 28px; border-radius: 8px; background: var(--accent);
+    color: white; display: inline-flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700;
+  }
+  h3{ font-size: 15px; margin: 18px 0 8px; color: var(--muted); font-weight: 600; letter-spacing:0.5px; }
+  p, li{ color: var(--fg); }
+  p.lead{ color: var(--muted); }
+  .meta-grid{
+    display:grid; grid-template-columns: repeat(auto-fit, minmax(170px,1fr));
+    gap: 10px; margin: 18px 0;
+  }
+  .meta-card{
+    background: var(--bg-card); border:1px solid var(--line); border-radius: 12px;
+    padding: 12px 14px;
+  }
+  .meta-card .v{ font-size:22px; font-weight:700; color:var(--accent); }
+  .meta-card .k{ font-size:12px; color: var(--muted); text-transform: uppercase; letter-spacing:0.5px; }
+  .card{
+    background: var(--bg-card); border:1px solid var(--line); border-radius: 12px;
+    padding: 16px 18px; margin: 14px 0;
+  }
+  .grid-2{ display:grid; grid-template-columns: 1fr 1fr; gap:18px; }
+  .grid-3{ display:grid; grid-template-columns: 1fr 1fr 1fr; gap:18px; }
+  @media (max-width: 900px){
+    .grid-2, .grid-3{ grid-template-columns: 1fr; }
+  }
+  table.tbl{
+    width:100%; border-collapse: collapse; font-size: 13px; margin: 8px 0;
+  }
+  table.tbl th, table.tbl td{
+    border-bottom: 1px solid var(--line); padding: 7px 9px; text-align: right;
+  }
+  table.tbl th{
+    background: var(--bg-soft); color: var(--muted); font-weight: 600;
+    border-bottom: 1px solid var(--line-strong);
+  }
+  table.tbl th:first-child, table.tbl td:first-child{ text-align: left; }
+  table.tbl tr:hover td{ background: #f1f5f9; }
+  .pill{
+    display:inline-block; padding: 2px 8px; border-radius: 999px;
+    font-size: 11px; font-weight:600;
+  }
+  .pill.good{ background: var(--cell-good); color: var(--good); }
+  .pill.mid { background: var(--cell-mid); color: var(--warn); }
+  .pill.bad { background: var(--cell-bad); color: var(--danger); }
+  .pill.flat{ background: #e0e7ff; color: #3730a3; }
+  .chart-wrap{ position: relative; height: 320px; }
+  .chart-wrap.tall{ height: 380px; }
+  .chart-wrap.short{ height: 240px; }
+  .legend-row{ display:flex; gap:14px; flex-wrap: wrap; font-size:12px; color:var(--muted); margin-bottom:6px; }
+  .legend-row .sw{ display:inline-block; width:12px; height:12px; border-radius:3px; vertical-align:middle; margin-right:6px; }
+  .callout{
+    border-left: 4px solid var(--accent); background: #eff6ff;
+    padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 12px 0;
+  }
+  .callout.warn{ border-color: var(--warn); background:#fff7ed; }
+  .callout.danger{ border-color: var(--danger); background:#fef2f2; }
+  .callout.good{ border-color: var(--good); background:#f0fdf4; }
+  .callout h4{ margin:0 0 4px; font-size:13.5px; }
+  ul.findings{ margin: 8px 0 8px 18px; padding: 0; }
+  ul.findings li{ margin: 6px 0; }
+  code{
+    background:#f1f5f9; padding: 1px 6px; border-radius: 4px; font-size: 12.5px;
+    color: #0f172a;
+  }
+  .footer{
+    margin-top: 40px; padding-top: 18px; border-top: 1px solid var(--line);
+    font-size: 12px; color: var(--muted);
+  }
+  .heatmap{
+    display:grid; gap:1px; background: var(--line); border-radius: 8px;
+    overflow: hidden; margin: 8px 0;
+  }
+  .heatmap .cell{
+    background: white; padding: 7px 9px; text-align: center;
+    font-variant-numeric: tabular-nums; font-size: 12.5px;
+  }
+  .heatmap .head{ background: var(--bg-soft); font-weight: 600; color: var(--muted); }
+  .toc{ background: var(--bg-card); border:1px solid var(--line); border-radius: 12px; padding: 12px 16px; margin: 16px 0; }
+  .toc a{ color: var(--accent); text-decoration: none; }
+  .toc a:hover{ text-decoration: underline; }
+  .toc ol{ margin: 6px 0 6px 20px; padding:0; columns: 2; }
+  @media (max-width: 700px){ .toc ol{ columns: 1; } }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="banner">
+  <h1>SHAP Explanation Drift Study — 全实验结果分析</h1>
+  <p><span class="tag">6 datasets</span><span class="tag">3 generators</span><span class="tag">3 models</span><span class="tag">10 seeds</span><span class="tag">540 correction trials</span><span class="tag">2700 FSC trials</span></p>
+  <p style="margin-top:10px;">合成表格数据在 <strong>SHAP 解释</strong> 维度上是否忠实于真实数据？如不忠实，能否以<strong>低成本</strong>修正？</p>
+</header>
+
+<div class="toc">
+  <strong>目录</strong>
+  <ol>
+    <li><a href="#exec">执行摘要</a></li>
+    <li><a href="#config">实验配置</a></li>
+    <li><a href="#quality">合成数据质量</a></li>
+    <li><a href="#baseline">真实数据基线</a></li>
+    <li><a href="#drift">SHAP 漂移主指标</a></li>
+    <li><a href="#gap">效用 vs 解释忠诚度</a></li>
+    <li><a href="#significance">显著性检验</a></li>
+    <li><a href="#mechanism">漂移机制分析</a></li>
+    <li><a href="#correction">修正方法效果</a></li>
+    <li><a href="#fsc">FSC 校准预算曲线</a></li>
+    <li><a href="#fair">公平基线比较</a></li>
+    <li><a href="#ablation">消融研究</a></li>
+    <li><a href="#extra">交互/类条件/样本级</a></li>
+    <li><a href="#conclude">结论与限制</a></li>
+  </ol>
+</div>
+
+<!-- ============================================================== -->
+<h2 id="exec"><span class="num">1</span>执行摘要</h2>
+
+<div class="callout">
+<h4>核心结论</h4>
+<ul class="findings">
+  <li><strong>SHAP 漂移普遍存在且统计显著</strong> — 在 18 个 (dataset × generator) × 3 model 组合下，67%–100% 的 (dataset, XGBoost) 配对 p&lt;0.05 拒绝"无漂移"。</li>
+  <li><strong>3 类生成器漂移差异显著</strong> — GaussianCopula 平均 ρ≈0.58 显著优于 TVAE（≈0.00，部分情况下负相关）。</li>
+  <li><strong>SDC-Corr 平均提升 Δρ=+0.159</strong>（540 次试验），TVAE 受益最多 (+0.22)、GaussianCopula 最少 (+0.10)，与漂移基数一致。</li>
+  <li><strong>FSC 仅用 20% 真实数据即可达到 87% 的全数据 SDC 改进</strong>（Δρ=+0.137 vs +0.157），样本效率优势明显。</li>
+  <li><strong>消融</strong>：相关性先验 &lt; MI 先验 &lt; CV α 自适应；α=0.7 是不带 CV 时的稳健默认值。</li>
+  <li><strong>机制层面</strong>：CTGAN/TVAE 在多个数据集上呈极端 mode-collapse 反向（synth/real uniqueness 比 50–490×），暗示连续化偏置 → 训练时离散基数被人为放大。</li>
+</ul>
+</div>
+
+<!-- ============================================================== -->
+<h2 id="config"><span class="num">2</span>实验配置</h2>
+
+<div class="meta-grid">
+  <div class="meta-card"><div class="v" id="m_ds">—</div><div class="k">Datasets</div></div>
+  <div class="meta-card"><div class="v" id="m_gen">—</div><div class="k">Generators</div></div>
+  <div class="meta-card"><div class="v" id="m_mod">—</div><div class="k">Models</div></div>
+  <div class="meta-card"><div class="v" id="m_seed">—</div><div class="k">Seeds</div></div>
+  <div class="meta-card"><div class="v" id="m_corr">—</div><div class="k">Correction trials</div></div>
+  <div class="meta-card"><div class="v" id="m_fsc">—</div><div class="k">FSC trials</div></div>
+  <div class="meta-card"><div class="v" id="m_fb">—</div><div class="k">Fair-baseline trials</div></div>
+</div>
+
+<p class="lead">所有实验在 <code>shap_drift/config.py:SEEDS = [42,123,456,789,2024,314,271,828,159,653]</code> 上重复；指标聚合采用<strong>多种子均值 ± 标准差</strong>，显著性采用 one-sided one-sample t-test（H₀: ρ̄=0）。</p>
+
+<!-- ============================================================== -->
+<h2 id="quality"><span class="num">3</span>合成数据质量（KS / W₁ / TSTR）</h2>
+
+<p class="lead">在进入 SHAP 漂移分析之前，先看生成器在<em>分布层面</em>的保真度。这里不涉及解释。</p>
+
+<div class="grid-2">
+  <div class="card">
+    <h3>边缘分布 KS 距离 ↓</h3>
+    <div class="chart-wrap"><canvas id="quality_ks"></canvas></div>
+  </div>
+  <div class="card">
+    <h3>TSTR Downstream AUROC ↑</h3>
+    <div class="chart-wrap"><canvas id="quality_auroc"></canvas></div>
+  </div>
+</div>
+
+<div class="card">
+  <h3>详细指标表</h3>
+  <div class="legend-row">KS / W₁ 越小越好；TSTR-AUROC 越高表示合成数据训练→真实数据测试效用越好。</div>
+  <div style="overflow-x:auto;"><table class="tbl" id="quality_tbl"></table></div>
+</div>
+
+<!-- ============================================================== -->
+<h2 id="baseline"><span class="num">4</span>真实数据基线表现</h2>
+
+<p class="lead">在真实数据上的 10-seed AUROC，提供后续 utility-drift gap 的对照基线。</p>
+<div class="card">
+  <div class="chart-wrap"><canvas id="baseline_auroc"></canvas></div>
+</div>
+
+<!-- ============================================================== -->
+<h2 id="drift"><span class="num">5</span>SHAP 漂移主指标</h2>
+
+<p class="lead">Spearman ρ 衡量真实/合成 SHAP 全局重要性的秩相关。下面热图采用 XGBoost 作为代表（树模型 SHAP 最具结构性）。</p>
+
+<div class="grid-2">
+  <div class="card">
+    <h3>漂移 ρ 热图（XGBoost）</h3>
+    <div id="drift_heatmap"></div>
+    <div class="legend-row"><span><span class="pill bad">&lt;0.3</span>&nbsp;严重漂移</span><span><span class="pill mid">0.3–0.6</span>&nbsp;中等</span><span><span class="pill good">&gt;0.6</span>&nbsp;轻度</span></div>
+  </div>
+  <div class="card">
+    <h3>三模型 ρ 分布</h3>
+    <div class="chart-wrap"><canvas id="drift_by_model"></canvas></div>
+  </div>
+</div>
+
+<div class="card">
+  <h3>每模型 × 生成器明细（mean ρ ± std）</h3>
+  <div style="overflow-x:auto;"><table class="tbl" id="drift_tbl"></table></div>
+</div>
+
+<!-- ============================================================== -->
+<h2 id="gap"><span class="num">6</span>效用 vs 解释忠诚度（Utility-Drift Gap）</h2>
+
+<p class="lead">"<strong>Gap = synth_AUROC − ρ</strong>"。Gap 越大表示"虽然下游 AUROC 还行，但解释结构已经偏离"——这是研究的核心动机：分布相近 ≠ 解释一致。</p>
+
+<div class="grid-2">
+  <div class="card">
+    <h3>Gap 热图（XGBoost）</h3>
+    <div id="gap_heatmap"></div>
+    <div class="legend-row">深色 = 高 gap → 合成数据"伪装"得很好但 SHAP 已偏离。</div>
+  </div>
+  <div class="card">
+    <h3>Gap 分布</h3>
+    <div class="chart-wrap"><canvas id="gap_box"></canvas></div>
+  </div>
+</div>
+
+<div class="callout warn">
+<h4>观察</h4>
+TVAE 在 Adult/CaliforniaHousing 上 gap 高达 +1.0~+1.5（同时 ρ 为负，AUROC 仍然可接受）——意味着"合成数据训练出的模型在测试集上分类还行，但它依赖的特征完全不是真实模型依赖的特征"。这正是 explanation drift 想揭示的现象。
+</div>
+
+<!-- ============================================================== -->
+<h2 id="significance"><span class="num">7</span>显著性检验</h2>
+
+<p class="lead">每个 (dataset × model × generator) 在 10 个 seed 上做 one-sided t-test，零假设 ρ̄=0。</p>
+
+<div class="card">
+  <h3>显著性比例（p&lt;0.05）— 按数据集</h3>
+  <div class="chart-wrap short"><canvas id="sig_bar"></canvas></div>
+</div>
+
+<!-- ============================================================== -->
+<h2 id="mechanism"><span class="num">8</span>漂移机制分析</h2>
+
+<p class="lead">把每个生成器在每个数据集上的 KL 散度、mode-collapse 比、相关性差异、目标率偏移一起放进表里——为后续修正方法的设计提供线索。</p>
+
+<div class="card">
+  <h3>机制综合表</h3>
+  <div style="overflow-x:auto;"><table class="tbl" id="mech_tbl"></table></div>
+  <div class="legend-row"><strong>mode_collapse_ratio</strong> = synth_uniqueness / real_uniqueness；&gt;1 表示合成数据比真实数据"更分散"（连续化偏置，常见于把离散变量当连续训练）。</div>
+</div>
+
+<!-- ============================================================== -->
+<h2 id="correction"><span class="num">9</span>修正方法效果（SDC / Guarded / FSC）</h2>
+
+<p class="lead">在 6 dataset × 3 model × 3 generator × 10 seed = 540 次试验上汇总。</p>
+
+<div class="meta-grid">
+  <div class="meta-card"><div class="v" id="ov_sdc">—</div><div class="k">SDC-Corr Δρ</div></div>
+  <div class="meta-card"><div class="v" id="ov_g">—</div><div class="k">SDC-Guarded Δρ</div></div>
+  <div class="meta-card"><div class="v" id="ov_fsc">—</div><div class="k">FSC-Corr Δρ (20%)</div></div>
+  <div class="meta-card"><div class="v" id="ov_fscg">—</div><div class="k">FSC-Guarded Δρ</div></div>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <h3>按数据集汇总（Δρ）</h3>
+    <div class="chart-wrap"><canvas id="corr_by_ds"></canvas></div>
+  </div>
+  <div class="card">
+    <h3>按生成器汇总（Δρ）</h3>
+    <div class="chart-wrap"><canvas id="corr_by_gen"></canvas></div>
+  </div>
+</div>
+
+<div class="card">
+  <h3>SDC vs SDC-Guarded 行为对比</h3>
+  <div style="overflow-x:auto;"><table class="tbl" id="corr_compare_tbl"></table></div>
+  <div class="callout">
+    <strong>SDC-Guarded 几乎与 SDC 持平</strong> (+0.001 平均) — 因为本次数据中 prior reliability（rank_agreement）大多落在阈值附近，dampening 极少被触发。Guard 机制的真正价值在<em>高 ρ 情况下避免负效果</em>，而非提升均值。
+  </div>
+</div>
+
+<!-- ============================================================== -->
+<h2 id="fsc"><span class="num">10</span>FSC 校准预算曲线</h2>
+
+<p class="lead">少样本（few-shot）下，FSC 用 5%–50% 的真实数据子集计算 prior。横轴是真实数据使用比例。</p>
+
+<div class="grid-2">
+  <div class="card">
+    <h3>Δρ vs 数据预算</h3>
+    <div class="chart-wrap"><canvas id="fsc_curve"></canvas></div>
+  </div>
+  <div class="card">
+    <h3>FSC 相对 full-data 的 retention</h3>
+    <div style="overflow-x:auto;"><table class="tbl" id="fsc_tbl"></table></div>
+  </div>
+</div>
+
+<div class="callout good">
+<h4>关键发现</h4>
+<strong>20% 数据 → 87% 的全量 SDC 改进；50% 数据 → 97%。</strong> 这意味着 FSC 在样本极少时仍具实用价值，论文 "20% real data achieves &gt;80% of full correction improvement" 的论点得到验证。
+</div>
+
+<!-- ============================================================== -->
+<h2 id="fair"><span class="num">11</span>公平基线比较（等数据预算）</h2>
+
+<p class="lead">同样数据预算下，对比 FSC-Corr、SHAP Distillation、Fine-tuning、SDC-Corr (100%)。</p>
+
+<div class="card">
+  <div class="chart-wrap"><canvas id="fair_curve"></canvas></div>
+</div>
+
+<div class="callout warn">
+<h4>观察</h4>
+<strong>Fine-tuning 在大预算下 Δρ 最高（+0.41），但需重新训练模型</strong>。FSC/SDC 仅做 post-hoc 重加权——计算成本远低于重训练且不需要标签。在 5%–10% 极少预算下，SHAP Distillation 已显著优于 FSC（+0.19 vs +0.09），说明蒸馏方法在低预算时更具优势。
+</div>
+
+<!-- ============================================================== -->
+<h2 id="ablation"><span class="num">12</span>消融研究</h2>
+
+<div class="grid-3">
+  <div class="card">
+    <h3>α 选择策略</h3>
+    <div class="chart-wrap short"><canvas id="abl_alpha"></canvas></div>
+    <div class="legend-row">CV α 最佳 (+0.32)，自适应次之 (+0.25)，固定 α=0.7~0.9 也可接受 (+0.22)。</div>
+  </div>
+  <div class="card">
+    <h3>先验类型</h3>
+    <div class="chart-wrap short"><canvas id="abl_prior"></canvas></div>
+    <div class="legend-row">MI 先验 (+0.24) &gt; 相关性 (+0.15) &gt; 均匀 (0) &gt; 随机 (-0.07)；信息量越大越好。</div>
+  </div>
+  <div class="card">
+    <h3>样本采样策略</h3>
+    <div class="chart-wrap short"><canvas id="abl_sample"></canvas></div>
+    <div class="legend-row">随机 ≈ 密度 (+0.13) &gt; 边界采样 (+0.08)；边界采样反而损害 prior 估计。</div>
+  </div>
+</div>
+
+<!-- ============================================================== -->
+<h2 id="extra"><span class="num">13</span>交互漂移 / 类条件 / 样本级一致性</h2>
+
+<div class="grid-2">
+  <div class="card">
+    <h3>二阶交互 ρ（XGBoost-only）</h3>
+    <div id="inter_heat"></div>
+    <div class="legend-row">大多 &gt; 0.5，说明二阶交互结构比一阶重要性更稳定 — 生成器破坏的主要是<strong>一阶贡献</strong>。</div>
+  </div>
+  <div class="card">
+    <h3>样本级 cosine（XGBoost）</h3>
+    <div id="ps_heat"></div>
+    <div class="legend-row">个体解释 cos 远低于全局 ρ — 平均聚合稳定，但单样本解释抖动剧烈。</div>
+  </div>
+</div>
+
+<div class="card">
+  <h3>类条件 SHAP 一致性</h3>
+  <div style="overflow-x:auto;"><table class="tbl" id="cond_tbl"></table></div>
+</div>
+
+<!-- ============================================================== -->
+<h2 id="conclude"><span class="num">14</span>结论、限制与展望</h2>
+
+<div class="grid-2">
+  <div class="card">
+    <h3>结论</h3>
+    <ul class="findings">
+      <li><strong>SHAP 漂移是合成数据可信化必须正视的问题</strong>——即使 TSTR-AUROC 很好，解释也可能彻底偏离。</li>
+      <li><strong>SDC 系列方法平均改进 Δρ ≈ +0.16</strong>，且 FSC 用 20% 数据即可保留 87% 的改进，计算成本极低。</li>
+      <li><strong>三类生成器表现存在系统差异</strong>：GaussianCopula 在 ρ 上稳健（但 mode-collapse 偶发），CTGAN/TVAE 在多个数据集出现严重连续化偏置。</li>
+      <li><strong>CV α + MI prior 是最强组合</strong>（+0.32 vs 默认 +0.15），可在论文中作为推荐设置。</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>限制 & 未来工作</h3>
+    <ul class="findings">
+      <li>仅评估了 3 个生成器范式；扩散模型 (TabDDPM) / 大语言模型生成（GReaT 系）未覆盖。</li>
+      <li>修正方法均为 post-hoc 重加权，未改变模型本身；若希望从根本修复，需要回到生成器训练阶段（如 SHAP-aware 损失）。</li>
+      <li>实验局限于 binary classification + 表格数据；多分类与回归任务的漂移定义需重新校准。</li>
+      <li>显著性检验为单样本 t-test，假设 ρ 的 10-seed 分布近似正态；未来可改用非参数 bootstrap。</li>
+    </ul>
+  </div>
+</div>
+
+<div class="footer">
+  生成时间：实验运行结束后基于 <code>results/*.json</code> 与 <code>results/*.csv</code> 自动聚合渲染。<br>
+  代码仓库：<code>shap_drift/</code> 与 <code>run.py</code>，配套实验编排见 <code>CLAUDE.md</code>。
+</div>
+
+</div>
+
+<script>
+const DATA = {"meta": {"datasets": ["Adult", "CaliforniaHousing", "CreditCardFraud", "GermanCredit", "HeartDisease", "Injury1798"], "generators": ["GaussianCopula", "CTGAN", "TVAE"], "models": ["XGBoost", "RandomForest", "MLP"], "n_seeds": 10, "n_correction_rows": 540, "n_fsc_rows": 2700, "n_fb_rows": 2700}, "drift": [{"dataset": "CreditCardFraud", "model": "XGBoost", "generator": "GaussianCopula", "rho_mean": 0.6900000000000001, "rho_std": 0.1028076917725678, "sign_mean": 0.8090909090909092, "top5_mean": 0.76, "auroc_mean": 0.9040208700142902, "gap_mean": 0.2140208700142901, "mean_ks": 0.4176742039686202}, {"dataset": "CreditCardFraud", "model": "XGBoost", "generator": "CTGAN", "rho_mean": 0.35363636363636364, "rho_std": 0.08145880670671923, "sign_mean": 0.5545454545454545, "top5_mean": 0.6, "auroc_mean": 0.9622599504074298, "gap_mean": 0.6086235867710661, "mean_ks": 0.39733887094293185}, {"dataset": "CreditCardFraud", "model": "XGBoost", "generator": "TVAE", "rho_mean": 0.15818181818181817, "rho_std": 0.10278759290983688, "sign_mean": 0.36363636363636365, "top5_mean": 0.58, "auroc_mean": 0.8177726126938445, "gap_mean": 0.6595907945120263, "mean_ks": 0.5200276880479926}, {"dataset": "CreditCardFraud", "model": "RandomForest", "generator": "GaussianCopula", "rho_mean": 0.7590909090909091, "rho_std": 0.04210376791603421, "sign_mean": 0.7272727272727273, "top5_mean": 0.8, "auroc_mean": 0.9599798814616367, "gap_mean": 0.20088897237072736, "mean_ks": 0.482525765266882}, {"dataset": "CreditCardFraud", "model": "RandomForest", "generator": "CTGAN", "rho_mean": 0.7181818181818184, "rho_std": 0.025061906821982213, "sign_mean": 0.3545454545454546, "top5_mean": 0.8, "auroc_mean": 0.9644436284593608, "gap_mean": 0.24626181027754268, "mean_ks": 0.5067989540070759}, {"dataset": "CreditCardFraud", "model": "RandomForest", "generator": "TVAE", "rho_mean": 0.09, "rho_std": 0.05133748328543819, "sign_mean": 0.44545454545454544, "top5_mean": 0.4, "auroc_mean": 0.8597493110283677, "gap_mean": 0.7697493110283676, "mean_ks": 0.6277341947392708}, {"dataset": "CreditCardFraud", "model": "MLP", "generator": "GaussianCopula", "rho_mean": 0.47727272727272735, "rho_std": 0.29978642535386135, "sign_mean": 0.618181818181818, "top5_mean": 0.5799999999999998, "auroc_mean": 0.7676095109484866, "gap_mean": 0.2903367836757592, "mean_ks": 0.5702727272727273}, {"dataset": "CreditCardFraud", "model": "MLP", "generator": "CTGAN", "rho_mean": 0.6627272727272728, "rho_std": 0.13986120628964055, "sign_mean": 0.5090909090909091, "top5_mean": 0.8, "auroc_mean": 0.9210068189333654, "gap_mean": 0.25827954620609267, "mean_ks": 0.4750454545454546}, {"dataset": "CreditCardFraud", "model": "MLP", "generator": "TVAE", "rho_mean": 0.24272727272727276, "rho_std": 0.19485319754892738, "sign_mean": 0.5272727272727271, "top5_mean": 0.5999999999999999, "auroc_mean": 0.7565760698261175, "gap_mean": 0.5138487970988448, "mean_ks": 0.5134545454545455}, {"dataset": "HeartDisease", "model": "XGBoost", "generator": "GaussianCopula", "rho_mean": 0.048901098901098894, "rho_std": 0.0910315370176494, "sign_mean": 0.6615384615384616, "top5_mean": 0.26, "auroc_mean": 0.8043526785714284, "gap_mean": 0.7554515796703297, "mean_ks": 0.38217948717948713}, {"dataset": "HeartDisease", "model": "XGBoost", "generator": "CTGAN", "rho_mean": 0.356043956043956, "rho_std": 0.1170677861839431, "sign_mean": 0.476923076923077, "top5_mean": 0.5, "auroc_mean": 0.7046875, "gap_mean": 0.3486435439560439, "mean_ks": 0.4774358974358974}, {"dataset": "HeartDisease", "model": "XGBoost", "generator": "TVAE", "rho_mean": 0.34065934065934067, "rho_std": 0.09658459247937881, "sign_mean": 0.5461538461538462, "top5_mean": 0.5999999999999999, "auroc_mean": 0.901171875, "gap_mean": 0.5605125343406593, "mean_ks": 0.5121794871794871}, {"dataset": "HeartDisease", "model": "RandomForest", "generator": "GaussianCopula", "rho_mean": 0.389010989010989, "rho_std": 0.05586050561379708, "sign_mean": 0.5846153846153846, "top5_mean": 0.5799999999999998, "auroc_mean": 0.8564732142857142, "gap_mean": 0.46746222527472536, "mean_ks": 0.392051282051282}, {"dataset": "HeartDisease", "model": "RandomForest", "generator": "CTGAN", "rho_mean": -0.004945054945054946, "rho_std": 0.15989766229661317, "sign_mean": 0.5153846153846153, "top5_mean": 0.28, "auroc_mean": 0.5808035714285713, "gap_mean": 0.5857486263736262, "mean_ks": 0.48858974358974355}, {"dataset": "HeartDisease", "model": "RandomForest", "generator": "TVAE", "rho_mean": 0.4989010989010988, "rho_std": 0.07423888243540457, "sign_mean": 0.48461538461538456, "top5_mean": 0.44000000000000006, "auroc_mean": 0.9137276785714287, "gap_mean": 0.41482657967032965, "mean_ks": 0.495}, {"dataset": "HeartDisease", "model": "MLP", "generator": "GaussianCopula", "rho_mean": 0.8439560439560438, "rho_std": 0.0948880577798809, "sign_mean": 0.6307692307692307, "top5_mean": 0.8799999999999999, "auroc_mean": 0.6463169642857143, "gap_mean": -0.19763907967032962, "mean_ks": 0.30423076923076925}, {"dataset": "HeartDisease", "model": "MLP", "generator": "CTGAN", "rho_mean": 0.8395604395604395, "rho_std": 0.07800649900624748, "sign_mean": 0.4769230769230769, "top5_mean": 0.8400000000000001, "auroc_mean": 0.39453125, "gap_mean": -0.4450291895604396, "mean_ks": 0.44128205128205134}, {"dataset": "HeartDisease", "model": "MLP", "generator": "TVAE", "rho_mean": 0.633792855333124, "rho_std": 0.2466481231223612, "sign_mean": 0.3692307692307692, "top5_mean": 0.74, "auroc_mean": 0.42589285714285713, "gap_mean": -0.20789999819026686, "mean_ks": 0.4491025641025641}, {"dataset": "Injury1798", "model": "XGBoost", "generator": "GaussianCopula", "rho_mean": 0.6676257349403725, "rho_std": 0.07136154323151128, "sign_mean": 0.76, "top5_mean": 0.86, "auroc_mean": 0.6576208897485494, "gap_mean": -0.010004845191823142, "mean_ks": 0.18201634877384193}, {"dataset": "Injury1798", "model": "XGBoost", "generator": "CTGAN", "rho_mean": 0.23899821109123437, "rho_std": 0.06071863103307744, "sign_mean": 0.6933333333333334, "top5_mean": 0.48, "auroc_mean": 0.5324403610573823, "gap_mean": 0.293442149966148, "mean_ks": 0.2683742052679382}, {"dataset": "Injury1798", "model": "XGBoost", "generator": "TVAE", "rho_mean": 0.5692307692307692, "rho_std": 0.05209872386194602, "sign_mean": 0.7466666666666667, "top5_mean": 0.6599999999999999, "auroc_mean": 0.6549629271437781, "gap_mean": 0.08573215791300898, "mean_ks": 0.32225249772933695}, {"dataset": "Injury1798", "model": "RandomForest", "generator": "GaussianCopula", "rho_mean": 0.822962620071582, "rho_std": 0.050561511594721734, "sign_mean": 0.6133333333333334, "top5_mean": 0.8200000000000001, "auroc_mean": 0.6983010960670535, "gap_mean": -0.12466152400452854, "mean_ks": 0.24564940962761125}, {"dataset": "Injury1798", "model": "RandomForest", "generator": "CTGAN", "rho_mean": 0.2636851520572451, "rho_std": 0.05260243563360029, "sign_mean": 0.6, "top5_mean": 0.2800000000000001, "auroc_mean": 0.5501031592520954, "gap_mean": 0.2864180071948504, "mean_ks": 0.3727883742052679}, {"dataset": "Injury1798", "model": "RandomForest", "generator": "TVAE", "rho_mean": 0.7069767441860464, "rho_std": 0.04693491169124404, "sign_mean": 0.5199999999999999, "top5_mean": 0.5999999999999999, "auroc_mean": 0.7007736943907157, "gap_mean": -0.006203049795330773, "mean_ks": 0.29371480472297906}, {"dataset": "Injury1798", "model": "MLP", "generator": "GaussianCopula", "rho_mean": 0.8522361359570662, "rho_std": 0.06103404369196713, "sign_mean": 0.6133333333333333, "top5_mean": 0.72, "auroc_mean": 0.519472920696325, "gap_mean": -0.33276321526074115, "mean_ks": 0.2369666666666667}, {"dataset": "Injury1798", "model": "MLP", "generator": "CTGAN", "rho_mean": 0.8135957066189624, "rho_std": 0.08124797446698581, "sign_mean": 0.6533333333333333, "top5_mean": 0.6599999999999999, "auroc_mean": 0.5878030303030303, "gap_mean": -0.22579267631593208, "mean_ks": 0.2674333333333333}, {"dataset": "Injury1798", "model": "MLP", "generator": "TVAE", "rho_mean": 0.8468694096601073, "rho_std": 0.04850021668073143, "sign_mean": 0.5599999999999999, "top5_mean": 0.74, "auroc_mean": 0.6319019987105093, "gap_mean": -0.21496741094959795, "mean_ks": 0.24096666666666663}, {"dataset": "CaliforniaHousing", "model": "XGBoost", "generator": "GaussianCopula", "rho_mean": 0.5690476190476191, "rho_std": 0.14382607914799006, "sign_mean": 0.5, "top5_mean": 0.8800000000000001, "auroc_mean": 0.8495386839964837, "gap_mean": 0.28049106494886444, "mean_ks": 0.2789274467054264}, {"dataset": "CaliforniaHousing", "model": "XGBoost", "generator": "CTGAN", "rho_mean": 0.5285714285714287, "rho_std": 0.01781741612749494, "sign_mean": 0.5125, "top5_mean": 0.5999999999999999, "auroc_mean": 0.8733207710156699, "gap_mean": 0.34474934244424116, "mean_ks": 0.3627937257751938}, {"dataset": "CaliforniaHousing", "model": "XGBoost", "generator": "TVAE", "rho_mean": -0.3476190476190476, "rho_std": 0.08261595987094036, "sign_mean": 0.525, "top5_mean": 0.5999999999999999, "auroc_mean": 0.6587952029238784, "gap_mean": 1.0064142505429263, "mean_ks": 0.4637990552325581}, {"dataset": "CaliforniaHousing", "model": "RandomForest", "generator": "GaussianCopula", "rho_mean": 0.3404761904761905, "rho_std": 0.09100721358864951, "sign_mean": 0.2375, "top5_mean": 0.6599999999999999, "auroc_mean": 0.8756284542950332, "gap_mean": 0.5351522638188427, "mean_ks": 0.3714328972868217}, {"dataset": "CaliforniaHousing", "model": "RandomForest", "generator": "CTGAN", "rho_mean": -0.007142857142857143, "rho_std": 0.056393901344414354, "sign_mean": 0.325, "top5_mean": 0.5, "auroc_mean": 0.8453203038899367, "gap_mean": 0.8524631610327938, "mean_ks": 0.4932261385658914}, {"dataset": "CaliforniaHousing", "model": "RandomForest", "generator": "TVAE", "rho_mean": -0.21428571428571433, "rho_std": 0.03984095364447979, "sign_mean": 0.475, "top5_mean": 0.5599999999999999, "auroc_mean": 0.7111096583526894, "gap_mean": 0.9253953726384039, "mean_ks": 0.43652192344961244}, {"dataset": "CaliforniaHousing", "model": "MLP", "generator": "GaussianCopula", "rho_mean": 0.8261904761904765, "rho_std": 0.09285714285714287, "sign_mean": 0.6625, "top5_mean": 0.8, "auroc_mean": 0.85895109146627, "gap_mean": 0.03276061527579381, "mean_ks": 0.42762500000000003}, {"dataset": "CaliforniaHousing", "model": "MLP", "generator": "CTGAN", "rho_mean": 0.5857142857142856, "rho_std": 0.1417416768203545, "sign_mean": 0.55, "top5_mean": 0.74, "auroc_mean": 0.8066233968960788, "gap_mean": 0.22090911118179285, "mean_ks": 0.5121249999999999}, {"dataset": "CaliforniaHousing", "model": "MLP", "generator": "TVAE", "rho_mean": 0.8500000000000002, "rho_std": 0.09703658986816587, "sign_mean": 0.2875, "top5_mean": 0.9000000000000001, "auroc_mean": 0.7595382614706949, "gap_mean": -0.09046173852930514, "mean_ks": 0.4184375}, {"dataset": "GermanCredit", "model": "XGBoost", "generator": "GaussianCopula", "rho_mean": 0.7024060150375939, "rho_std": 0.04002062897306653, "sign_mean": 0.8, "top5_mean": 0.6399999999999999, "auroc_mean": 0.6191904761904762, "gap_mean": -0.08321553884711771, "mean_ks": 0.31172500000000003}, {"dataset": "GermanCredit", "model": "XGBoost", "generator": "CTGAN", "rho_mean": -0.11729323308270675, "rho_std": 0.08866571439678232, "sign_mean": 0.7, "top5_mean": 0.24000000000000005, "auroc_mean": 0.5402261904761905, "gap_mean": 0.6575194235588973, "mean_ks": 0.449375}, {"dataset": "GermanCredit", "model": "XGBoost", "generator": "TVAE", "rho_mean": 0.16721804511278193, "rho_std": 0.05415538475956631, "sign_mean": 0.7350000000000001, "top5_mean": 0.4, "auroc_mean": 0.7113690476190476, "gap_mean": 0.5441510025062657, "mean_ks": 0.46525}, {"dataset": "GermanCredit", "model": "RandomForest", "generator": "GaussianCopula", "rho_mean": 0.5335338345864662, "rho_std": 0.06849553906361443, "sign_mean": 0.615, "top5_mean": 0.36, "auroc_mean": 0.6660714285714285, "gap_mean": 0.13253759398496243, "mean_ks": 0.394825}, {"dataset": "GermanCredit", "model": "RandomForest", "generator": "CTGAN", "rho_mean": -0.296390977443609, "rho_std": 0.05811383208660137, "sign_mean": 0.555, "top5_mean": 0.22000000000000003, "auroc_mean": 0.5392619047619048, "gap_mean": 0.8356528822055136, "mean_ks": 0.540625}, {"dataset": "GermanCredit", "model": "RandomForest", "generator": "TVAE", "rho_mean": 0.25037593984962403, "rho_std": 0.07744360902255638, "sign_mean": 0.595, "top5_mean": 0.5999999999999999, "auroc_mean": 0.7261190476190477, "gap_mean": 0.4757431077694235, "mean_ks": 0.4426000000000001}, {"dataset": "GermanCredit", "model": "MLP", "generator": "GaussianCopula", "rho_mean": 0.24249973836423214, "rho_std": 0.37808110543106105, "sign_mean": 0.6449999999999999, "top5_mean": 0.4600000000000001, "auroc_mean": 0.44975, "gap_mean": 0.20725026163576787, "mean_ks": 0.09332499999999999}, {"dataset": "GermanCredit", "model": "MLP", "generator": "CTGAN", "rho_mean": 0.24221981512616458, "rho_std": 0.3187559207374476, "sign_mean": 0.31000000000000005, "top5_mean": 0.34, "auroc_mean": 0.4478452380952381, "gap_mean": 0.20562542296907355, "mean_ks": 0.204775}, {"dataset": "GermanCredit", "model": "MLP", "generator": "TVAE", "rho_mean": 0.1613617455420618, "rho_std": 0.2469615095663412, "sign_mean": 0.44000000000000006, "top5_mean": 0.27999999999999997, "auroc_mean": 0.48238690476190477, "gap_mean": 0.321025159219843, "mean_ks": 0.142125}, {"dataset": "Adult", "model": "XGBoost", "generator": "GaussianCopula", "rho_mean": 0.7828571428571429, "rho_std": 0.02285714285714291, "sign_mean": 0.7333333333333333, "top5_mean": 0.8400000000000001, "auroc_mean": 0.801437831291523, "gap_mean": 0.0185806884343801, "mean_ks": 0.42560914967677765}, {"dataset": "Adult", "model": "XGBoost", "generator": "CTGAN", "rho_mean": 0.18857142857142856, "rho_std": 0.055988336977901225, "sign_mean": 0.6833333333333333, "top5_mean": 0.8800000000000001, "auroc_mean": 0.7338858348509645, "gap_mean": 0.5453144062795359, "mean_ks": 0.45930714404110723}, {"dataset": "Adult", "model": "XGBoost", "generator": "TVAE", "rho_mean": -0.9085714285714287, "rho_std": 0.05237229365663814, "sign_mean": 0.6833333333333333, "top5_mean": 0.8, "auroc_mean": 0.5614425377360459, "gap_mean": 1.4700139663074743, "mean_ks": 0.637949610475717}, {"dataset": "Adult", "model": "RandomForest", "generator": "GaussianCopula", "rho_mean": 0.9314285714285715, "rho_std": 0.03428571428571427, "sign_mean": 0.4833333333333333, "top5_mean": 1.0, "auroc_mean": 0.8147204007545593, "gap_mean": -0.11670817067401225, "mean_ks": 0.45913862644344994}, {"dataset": "Adult", "model": "RandomForest", "generator": "CTGAN", "rho_mean": 0.20571428571428574, "rho_std": 0.01714285714285715, "sign_mean": 0.55, "top5_mean": 1.0, "auroc_mean": 0.741705262548486, "gap_mean": 0.5359909768342004, "mean_ks": 0.5149483396872755}, {"dataset": "Adult", "model": "RandomForest", "generator": "TVAE", "rho_mean": -0.22285714285714292, "rho_std": 0.08161632489763258, "sign_mean": 0.4, "top5_mean": 0.8, "auroc_mean": 0.5237552166889377, "gap_mean": 0.7466123595460805, "mean_ks": 0.5805348361787944}, {"dataset": "Adult", "model": "MLP", "generator": "GaussianCopula", "rho_mean": 0.721084520349104, "rho_std": 0.26898706527194, "sign_mean": 0.6333333333333334, "top5_mean": 0.9400000000000001, "auroc_mean": 0.5223694677970754, "gap_mean": -0.19871505255202865, "mean_ks": 0.5814999999999999}, {"dataset": "Adult", "model": "MLP", "generator": "CTGAN", "rho_mean": 0.8857142857142858, "rho_std": 0.04426266681379906, "sign_mean": 0.7166666666666666, "top5_mean": 0.96, "auroc_mean": 0.5667506445463284, "gap_mean": -0.31896364116795733, "mean_ks": 0.6098333333333333}, {"dataset": "Adult", "model": "MLP", "generator": "TVAE", "rho_mean": 0.9142857142857144, "rho_std": 0.058554004376911994, "sign_mean": 0.6333333333333333, "top5_mean": 0.9400000000000001, "auroc_mean": 0.6162592523585857, "gap_mean": -0.2980264619271288, "mean_ks": 0.5363333333333333}], "significance": [{"dataset": "CreditCardFraud", "model": "XGBoost", "generator": "GaussianCopula", "rho_mean": 0.6900000000000001, "rho_std": 0.1028076917725678, "synth_auroc": 0.9040208700142902, "utility_drift_gap": 0.2140208700142901, "significant_p005": true, "t_stat": 21.223816505317146, "p_value": 2.6870573278972745e-09}, {"dataset": "CreditCardFraud", "model": "XGBoost", "generator": "CTGAN", "rho_mean": 0.35363636363636364, "rho_std": 0.08145880670671923, "synth_auroc": 0.9622599504074298, "utility_drift_gap": 0.6086235867710661, "significant_p005": true, "t_stat": 13.728366738500357, "p_value": 1.214410886618205e-07}, {"dataset": "CreditCardFraud", "model": "XGBoost", "generator": "TVAE", "rho_mean": 0.15818181818181817, "rho_std": 0.10278759290983688, "synth_auroc": 0.8177726126938445, "utility_drift_gap": 0.6595907945120263, "significant_p005": true, "t_stat": 4.866490358617094, "p_value": 0.00044390916484412303}, {"dataset": "CreditCardFraud", "model": "RandomForest", "generator": "GaussianCopula", "rho_mean": 0.7590909090909091, "rho_std": 0.04210376791603421, "synth_auroc": 0.9599798814616367, "utility_drift_gap": 0.20088897237072736, "significant_p005": true, "t_stat": 57.01285995690976, "p_value": 3.955239803388348e-13}, {"dataset": "CreditCardFraud", "model": "RandomForest", "generator": "CTGAN", "rho_mean": 0.7181818181818184, "rho_std": 0.025061906821982213, "synth_auroc": 0.9644436284593608, "utility_drift_gap": 0.24626181027754268, "significant_p005": true, "t_stat": 90.61921487887196, "p_value": 6.150523055652495e-15}, {"dataset": "CreditCardFraud", "model": "RandomForest", "generator": "TVAE", "rho_mean": 0.09, "rho_std": 0.05133748328543819, "synth_auroc": 0.8597493110283677, "utility_drift_gap": 0.7697493110283676, "significant_p005": true, "t_stat": 5.543804861503252, "p_value": 0.00017964181446834495}, {"dataset": "CreditCardFraud", "model": "MLP", "generator": "GaussianCopula", "rho_mean": 0.47727272727272735, "rho_std": 0.29978642535386135, "synth_auroc": 0.7676095109484866, "utility_drift_gap": 0.2903367836757592, "significant_p005": true, "t_stat": 5.034480402108512, "p_value": 0.00035252853302688214}, {"dataset": "CreditCardFraud", "model": "MLP", "generator": "CTGAN", "rho_mean": 0.6627272727272728, "rho_std": 0.13986120628964055, "synth_auroc": 0.9210068189333654, "utility_drift_gap": 0.25827954620609267, "significant_p005": true, "t_stat": 14.98433843756288, "p_value": 5.6919179893944546e-08}, {"dataset": "CreditCardFraud", "model": "MLP", "generator": "TVAE", "rho_mean": 0.24272727272727276, "rho_std": 0.19485319754892738, "synth_auroc": 0.7565760698261175, "utility_drift_gap": 0.5138487970988448, "significant_p005": true, "t_stat": 3.939227283485128, "p_value": 0.0017049783744579573}, {"dataset": "HeartDisease", "model": "XGBoost", "generator": "GaussianCopula", "rho_mean": 0.048901098901098894, "rho_std": 0.0910315370176494, "synth_auroc": 0.8043526785714284, "utility_drift_gap": 0.7554515796703297, "significant_p005": false, "t_stat": 1.6987393345083013, "p_value": 0.06179549598393692}, {"dataset": "HeartDisease", "model": "XGBoost", "generator": "CTGAN", "rho_mean": 0.356043956043956, "rho_std": 0.1170677861839431, "synth_auroc": 0.7046875, "utility_drift_gap": 0.3486435439560439, "significant_p005": true, "t_stat": 9.61758896223326, "p_value": 2.472692383699848e-06}, {"dataset": "HeartDisease", "model": "XGBoost", "generator": "TVAE", "rho_mean": 0.34065934065934067, "rho_std": 0.09658459247937881, "synth_auroc": 0.901171875, "utility_drift_gap": 0.5605125343406593, "significant_p005": true, "t_stat": 11.153532825897898, "p_value": 7.160928157544806e-07}, {"dataset": "HeartDisease", "model": "RandomForest", "generator": "GaussianCopula", "rho_mean": 0.389010989010989, "rho_std": 0.05586050561379708, "synth_auroc": 0.8564732142857142, "utility_drift_gap": 0.46746222527472536, "significant_p005": true, "t_stat": 22.022012629359697, "p_value": 1.9384505336806205e-09}, {"dataset": "HeartDisease", "model": "RandomForest", "generator": "CTGAN", "rho_mean": -0.004945054945054946, "rho_std": 0.15989766229661317, "synth_auroc": 0.5808035714285713, "utility_drift_gap": 0.5857486263736262, "significant_p005": false, "t_stat": -0.09779778238436229, "p_value": 0.5378818672534804}, {"dataset": "HeartDisease", "model": "RandomForest", "generator": "TVAE", "rho_mean": 0.4989010989010988, "rho_std": 0.07423888243540457, "synth_auroc": 0.9137276785714287, "utility_drift_gap": 0.41482657967032965, "significant_p005": true, "t_stat": 21.251179273356236, "p_value": 2.656626794971943e-09}, {"dataset": "HeartDisease", "model": "MLP", "generator": "GaussianCopula", "rho_mean": 0.8439560439560438, "rho_std": 0.0948880577798809, "synth_auroc": 0.6463169642857143, "utility_drift_gap": -0.19763907967032962, "significant_p005": true, "t_stat": 28.126019294834283, "p_value": 2.206815153470948e-10}, {"dataset": "HeartDisease", "model": "MLP", "generator": "CTGAN", "rho_mean": 0.8395604395604395, "rho_std": 0.07800649900624748, "synth_auroc": 0.39453125, "utility_drift_gap": -0.4450291895604396, "significant_p005": true, "t_stat": 34.034641423536925, "p_value": 4.025305501199159e-11}, {"dataset": "HeartDisease", "model": "MLP", "generator": "TVAE", "rho_mean": 0.633792855333124, "rho_std": 0.2466481231223612, "synth_auroc": 0.42589285714285713, "utility_drift_gap": -0.20789999819026686, "significant_p005": true, "t_stat": 8.125863526640247, "p_value": 9.767612262901887e-06}, {"dataset": "Injury1798", "model": "XGBoost", "generator": "GaussianCopula", "rho_mean": 0.6676257349403725, "rho_std": 0.07136154323151128, "synth_auroc": 0.6576208897485494, "utility_drift_gap": -0.010004845191823142, "significant_p005": true, "t_stat": 29.584813491297652, "p_value": 1.4061917399493549e-10}, {"dataset": "Injury1798", "model": "XGBoost", "generator": "CTGAN", "rho_mean": 0.23899821109123437, "rho_std": 0.06071863103307744, "synth_auroc": 0.5324403610573823, "utility_drift_gap": 0.293442149966148, "significant_p005": true, "t_stat": 12.44722897889932, "p_value": 2.817267019717078e-07}, {"dataset": "Injury1798", "model": "XGBoost", "generator": "TVAE", "rho_mean": 0.5692307692307692, "rho_std": 0.05209872386194602, "synth_auroc": 0.6549629271437781, "utility_drift_gap": 0.08573215791300898, "significant_p005": true, "t_stat": 34.55105253228148, "p_value": 3.518393507359438e-11}, {"dataset": "Injury1798", "model": "RandomForest", "generator": "GaussianCopula", "rho_mean": 0.822962620071582, "rho_std": 0.050561511594721734, "synth_auroc": 0.6983010960670535, "utility_drift_gap": -0.12466152400452854, "significant_p005": true, "t_stat": 51.47069829450427, "p_value": 9.903180497123472e-13}, {"dataset": "Injury1798", "model": "RandomForest", "generator": "CTGAN", "rho_mean": 0.2636851520572451, "rho_std": 0.05260243563360029, "synth_auroc": 0.5501031592520954, "utility_drift_gap": 0.2864180071948504, "significant_p005": true, "t_stat": 15.851845178364739, "p_value": 3.488079508706073e-08}, {"dataset": "Injury1798", "model": "RandomForest", "generator": "TVAE", "rho_mean": 0.7069767441860464, "rho_std": 0.04693491169124404, "synth_auroc": 0.7007736943907157, "utility_drift_gap": -0.006203049795330773, "significant_p005": true, "t_stat": 47.63313030405006, "p_value": 1.9843811048031154e-12}, {"dataset": "Injury1798", "model": "MLP", "generator": "GaussianCopula", "rho_mean": 0.8522361359570662, "rho_std": 0.06103404369196713, "synth_auroc": 0.519472920696325, "utility_drift_gap": -0.33276321526074115, "significant_p005": true, "t_stat": 44.155804382332775, "p_value": 3.915328052031803e-12}, {"dataset": "Injury1798", "model": "MLP", "generator": "CTGAN", "rho_mean": 0.8135957066189624, "rho_std": 0.08124797446698581, "synth_auroc": 0.5878030303030303, "utility_drift_gap": -0.22579267631593208, "significant_p005": true, "t_stat": 31.666211303464387, "p_value": 7.66654926644449e-11}, {"dataset": "Injury1798", "model": "MLP", "generator": "TVAE", "rho_mean": 0.8468694096601073, "rho_std": 0.04850021668073143, "synth_auroc": 0.6319019987105093, "utility_drift_gap": -0.21496741094959795, "significant_p005": true, "t_stat": 55.2169948616352, "p_value": 5.271680575023314e-13}, {"dataset": "CaliforniaHousing", "model": "XGBoost", "generator": "GaussianCopula", "rho_mean": 0.5690476190476191, "rho_std": 0.14382607914799006, "synth_auroc": 0.8495386839964837, "utility_drift_gap": 0.28049106494886444, "significant_p005": true, "t_stat": 12.511545777693822, "p_value": 2.6957816646691095e-07}, {"dataset": "CaliforniaHousing", "model": "XGBoost", "generator": "CTGAN", "rho_mean": 0.5285714285714287, "rho_std": 0.01781741612749494, "synth_auroc": 0.8733207710156699, "utility_drift_gap": 0.34474934244424116, "significant_p005": true, "t_stat": 93.81212227486546, "p_value": 4.504993950504025e-15}, {"dataset": "CaliforniaHousing", "model": "XGBoost", "generator": "TVAE", "rho_mean": -0.3476190476190476, "rho_std": 0.08261595987094036, "synth_auroc": 0.6587952029238784, "utility_drift_gap": 1.0064142505429263, "significant_p005": false, "t_stat": -13.305757752520924, "p_value": 0.9999998410144355}, {"dataset": "CaliforniaHousing", "model": "RandomForest", "generator": "GaussianCopula", "rho_mean": 0.3404761904761905, "rho_std": 0.09100721358864951, "synth_auroc": 0.8756284542950332, "utility_drift_gap": 0.5351522638188427, "significant_p005": true, "t_stat": 11.830713286406734, "p_value": 4.34485040794995e-07}, {"dataset": "CaliforniaHousing", "model": "RandomForest", "generator": "CTGAN", "rho_mean": -0.007142857142857143, "rho_std": 0.056393901344414354, "synth_auroc": 0.8453203038899367, "utility_drift_gap": 0.8524631610327938, "significant_p005": false, "t_stat": -0.4005344023759144, "p_value": 0.6509478098737681}, {"dataset": "CaliforniaHousing", "model": "RandomForest", "generator": "TVAE", "rho_mean": -0.21428571428571433, "rho_std": 0.03984095364447979, "synth_auroc": 0.7111096583526894, "utility_drift_gap": 0.9253953726384039, "significant_p005": false, "t_stat": -17.00840128541523, "p_value": 0.9999999811450133}, {"dataset": "CaliforniaHousing", "model": "MLP", "generator": "GaussianCopula", "rho_mean": 0.8261904761904765, "rho_std": 0.09285714285714287, "synth_auroc": 0.85895109146627, "utility_drift_gap": 0.03276061527579381, "significant_p005": true, "t_stat": 28.136162771241743, "p_value": 2.1997381696502726e-10}, {"dataset": "CaliforniaHousing", "model": "MLP", "generator": "CTGAN", "rho_mean": 0.5857142857142856, "rho_std": 0.1417416768203545, "synth_auroc": 0.8066233968960788, "utility_drift_gap": 0.22090911118179285, "significant_p005": true, "t_stat": 13.067371873293553, "p_value": 1.8571888113549013e-07}, {"dataset": "CaliforniaHousing", "model": "MLP", "generator": "TVAE", "rho_mean": 0.8500000000000002, "rho_std": 0.09703658986816587, "synth_auroc": 0.7595382614706949, "utility_drift_gap": -0.09046173852930514, "significant_p005": true, "t_stat": 27.700231580633233, "p_value": 2.5279627479197446e-10}, {"dataset": "GermanCredit", "model": "XGBoost", "generator": "GaussianCopula", "rho_mean": 0.7024060150375939, "rho_std": 0.04002062897306653, "synth_auroc": 0.6191904761904762, "utility_drift_gap": -0.08321553884711771, "significant_p005": true, "t_stat": 55.501447796238395, "p_value": 5.034062974123674e-13}, {"dataset": "GermanCredit", "model": "XGBoost", "generator": "CTGAN", "rho_mean": -0.11729323308270675, "rho_std": 0.08866571439678232, "synth_auroc": 0.5402261904761905, "utility_drift_gap": 0.6575194235588973, "significant_p005": false, "t_stat": -4.183282943015759, "p_value": 0.9988177262946841}, {"dataset": "GermanCredit", "model": "XGBoost", "generator": "TVAE", "rho_mean": 0.16721804511278193, "rho_std": 0.05415538475956631, "synth_auroc": 0.7113690476190476, "utility_drift_gap": 0.5441510025062657, "significant_p005": true, "t_stat": 9.764308586945646, "p_value": 2.1812413721199904e-06}, {"dataset": "GermanCredit", "model": "RandomForest", "generator": "GaussianCopula", "rho_mean": 0.5335338345864662, "rho_std": 0.06849553906361443, "synth_auroc": 0.6660714285714285, "utility_drift_gap": 0.13253759398496243, "significant_p005": true, "t_stat": 24.63200011448633, "p_value": 7.180927458479381e-10}, {"dataset": "GermanCredit", "model": "RandomForest", "generator": "CTGAN", "rho_mean": -0.296390977443609, "rho_std": 0.05811383208660137, "synth_auroc": 0.5392619047619048, "utility_drift_gap": 0.8356528822055136, "significant_p005": false, "t_stat": -16.128183824612908, "p_value": 0.9999999699997423}, {"dataset": "GermanCredit", "model": "RandomForest", "generator": "TVAE", "rho_mean": 0.25037593984962403, "rho_std": 0.07744360902255638, "synth_auroc": 0.7261190476190477, "utility_drift_gap": 0.4757431077694235, "significant_p005": true, "t_stat": 10.223674377049226, "p_value": 1.48779721600881e-06}, {"dataset": "GermanCredit", "model": "MLP", "generator": "GaussianCopula", "rho_mean": 0.24249973836423214, "rho_std": 0.37808110543106105, "synth_auroc": 0.44975, "utility_drift_gap": 0.20725026163576787, "significant_p005": true, "t_stat": 2.0282724902414233, "p_value": 0.03656913857324311}, {"dataset": "GermanCredit", "model": "MLP", "generator": "CTGAN", "rho_mean": 0.24221981512616458, "rho_std": 0.3187559207374476, "synth_auroc": 0.4478452380952381, "utility_drift_gap": 0.20562542296907355, "significant_p005": true, "t_stat": 2.402986926333818, "p_value": 0.019851484377110453}, {"dataset": "GermanCredit", "model": "MLP", "generator": "TVAE", "rho_mean": 0.1613617455420618, "rho_std": 0.2469615095663412, "synth_auroc": 0.48238690476190477, "utility_drift_gap": 0.321025159219843, "significant_p005": true, "t_stat": 2.066195027838388, "p_value": 0.034393332010605814}, {"dataset": "Adult", "model": "XGBoost", "generator": "GaussianCopula", "rho_mean": 0.7828571428571429, "rho_std": 0.02285714285714291, "synth_auroc": 0.801437831291523, "utility_drift_gap": 0.0185806884343801, "significant_p005": true, "t_stat": 108.30800986076675, "p_value": 1.237465430595924e-15}, {"dataset": "Adult", "model": "XGBoost", "generator": "CTGAN", "rho_mean": 0.18857142857142856, "rho_std": 0.055988336977901225, "synth_auroc": 0.7338858348509645, "utility_drift_gap": 0.5453144062795359, "significant_p005": true, "t_stat": 10.650704202070395, "p_value": 1.0561296380144022e-06}, {"dataset": "Adult", "model": "XGBoost", "generator": "TVAE", "rho_mean": -0.9085714285714287, "rho_std": 0.05237229365663814, "synth_auroc": 0.5614425377360459, "utility_drift_gap": 1.4700139663074743, "significant_p005": false, "t_stat": -54.860211967717206, "p_value": 0.9999999999994412}, {"dataset": "Adult", "model": "RandomForest", "generator": "GaussianCopula", "rho_mean": 0.9314285714285715, "rho_std": 0.03428571428571427, "synth_auroc": 0.8147204007545593, "utility_drift_gap": -0.11670817067401225, "significant_p005": true, "t_stat": 85.90854310124102, "p_value": 9.93913008815634e-15}, {"dataset": "Adult", "model": "RandomForest", "generator": "CTGAN", "rho_mean": 0.20571428571428574, "rho_std": 0.01714285714285715, "synth_auroc": 0.741705262548486, "utility_drift_gap": 0.5359909768342004, "significant_p005": true, "t_stat": 37.947331922020545, "p_value": 1.5210362858761067e-11}, {"dataset": "Adult", "model": "RandomForest", "generator": "TVAE", "rho_mean": -0.22285714285714292, "rho_std": 0.08161632489763258, "synth_auroc": 0.5237552166889377, "utility_drift_gap": 0.7466123595460805, "significant_p005": false, "t_stat": -8.634745134015931, "p_value": 0.9999940164493012}, {"dataset": "Adult", "model": "MLP", "generator": "GaussianCopula", "rho_mean": 0.721084520349104, "rho_std": 0.26898706527194, "synth_auroc": 0.5223694677970754, "utility_drift_gap": -0.19871505255202865, "significant_p005": true, "t_stat": 8.477245801718759, "p_value": 6.946045083431068e-06}, {"dataset": "Adult", "model": "MLP", "generator": "CTGAN", "rho_mean": 0.8857142857142858, "rho_std": 0.04426266681379906, "synth_auroc": 0.5667506445463284, "utility_drift_gap": -0.31896364116795733, "significant_p005": true, "t_stat": 63.27848502189877, "p_value": 1.5507695815555215e-13}, {"dataset": "Adult", "model": "MLP", "generator": "TVAE", "rho_mean": 0.9142857142857144, "rho_std": 0.058554004376911994, "synth_auroc": 0.6162592523585857, "utility_drift_gap": -0.2980264619271288, "significant_p005": true, "t_stat": 49.377071987869414, "p_value": 1.4373627075011224e-12}], "quality": [{"dataset": "CreditCardFraud", "generator": "GaussianCopula", "mean_ks": 0.236049519586105, "mean_w1": 0.6350178373332924, "corr_diff_mean": 0.08004384836759652, "corr_diff_max": 0.16750372730146923, "tstr_auroc": 0.9392904355872826}, {"dataset": "CreditCardFraud", "generator": "CTGAN", "mean_ks": 0.38694875585119487, "mean_w1": 0.4480045881136547, "corr_diff_mean": 0.10200108020667709, "corr_diff_max": 0.28302238465128704, "tstr_auroc": 0.9649394375041311}, {"dataset": "CreditCardFraud", "generator": "TVAE", "mean_ks": 0.33148558758314856, "mean_w1": 0.39651241214156857, "corr_diff_mean": 0.29266050132722254, "corr_diff_max": 0.7973461697444714, "tstr_auroc": 0.8225618018375307}, {"dataset": "HeartDisease", "generator": "GaussianCopula", "mean_ks": 0.06552706552706553, "mean_w1": 0.09873595316845714, "corr_diff_mean": 0.11090692100998627, "corr_diff_max": 0.3750935024868476, "tstr_auroc": 0.7812956204379562}, {"dataset": "HeartDisease", "generator": "CTGAN", "mean_ks": 0.49650349650349646, "mean_w1": 1.1198771870807067, "corr_diff_mean": 0.16930451638118246, "corr_diff_max": 0.584621204289149, "tstr_auroc": 0.6568202554744526}, {"dataset": "HeartDisease", "generator": "TVAE", "mean_ks": 0.5024605024605024, "mean_w1": 0.6670381552673315, "corr_diff_mean": 0.28594820855500214, "corr_diff_max": 0.9406784937966406, "tstr_auroc": 0.8983348540145986}, {"dataset": "Injury1798", "generator": "GaussianCopula", "mean_ks": 0.1007278020378457, "mean_w1": 0.42256620225388625, "corr_diff_mean": 0.028779922426445947, "corr_diff_max": 0.3312891339892778, "tstr_auroc": 0.6643148121556467}, {"dataset": "Injury1798", "generator": "CTGAN", "mean_ks": 0.2350072780203784, "mean_w1": 0.5831193722792859, "corr_diff_mean": 0.11238660313419625, "corr_diff_max": 0.4702450657506028, "tstr_auroc": 0.5426826665217779}, {"dataset": "Injury1798", "generator": "TVAE", "mean_ks": 0.2500363901018923, "mean_w1": 0.38566653962165226, "corr_diff_mean": 0.1732754525023684, "corr_diff_max": 0.5791964787533593, "tstr_auroc": 0.6432994785299486}, {"dataset": "CaliforniaHousing", "generator": "GaussianCopula", "mean_ks": 0.26952519379844964, "mean_w1": 0.4960132400894416, "corr_diff_mean": 0.10246632306011934, "corr_diff_max": 0.9251387667338533, "tstr_auroc": 0.8784340818690662}, {"dataset": "CaliforniaHousing", "generator": "CTGAN", "mean_ks": 0.32584786821705425, "mean_w1": 0.7090112252829159, "corr_diff_mean": 0.10225919551996256, "corr_diff_max": 0.8443580684606357, "tstr_auroc": 0.8641374523338093}, {"dataset": "CaliforniaHousing", "generator": "TVAE", "mean_ks": 0.33364825581395346, "mean_w1": 0.3676122766963589, "corr_diff_mean": 0.3137490077444622, "corr_diff_max": 1.2395572475931027, "tstr_auroc": 0.6333044497833968}, {"dataset": "GermanCredit", "generator": "GaussianCopula", "mean_ks": 0.02555, "mean_w1": 0.049234164398962096, "corr_diff_mean": 0.04904671849094854, "corr_diff_max": 0.21899450222053085, "tstr_auroc": 0.608347619047619}, {"dataset": "GermanCredit", "generator": "CTGAN", "mean_ks": 0.39585, "mean_w1": 0.6043047162168457, "corr_diff_mean": 0.11389547408586288, "corr_diff_max": 0.7802771715222263, "tstr_auroc": 0.5340904761904762}, {"dataset": "GermanCredit", "generator": "TVAE", "mean_ks": 0.45919999999999994, "mean_w1": 0.441949592336214, "corr_diff_mean": 0.09773609629343855, "corr_diff_max": 0.5532836809479873, "tstr_auroc": 0.7112809523809523}, {"dataset": "Adult", "generator": "GaussianCopula", "mean_ks": 0.1535983467055677, "mean_w1": 0.16926906570361633, "corr_diff_mean": 0.0266038363982641, "corr_diff_max": 0.07940941889621256, "tstr_auroc": 0.8123479447766238}, {"dataset": "Adult", "generator": "CTGAN", "mean_ks": 0.2893486285171187, "mean_w1": 0.2700056448846519, "corr_diff_mean": 0.13972638809167373, "corr_diff_max": 0.3649637050115211, "tstr_auroc": 0.7381931566336304}, {"dataset": "Adult", "generator": "TVAE", "mean_ks": 0.6393309462237252, "mean_w1": 0.567813910465807, "corr_diff_mean": 0.27677139174598575, "corr_diff_max": 0.7599149796713868, "tstr_auroc": 0.5495576561423267}], "mechanisms": [{"dataset": "CreditCardFraud", "generator": "GaussianCopula", "corr_mismatch": 0.08004384836759652, "mode_collapse_ratio": 1.0486347861246768, "most_collapsed": "none", "target_rate_shift": 0.012533875338753386, "mean_kl": 0.7527365441022318}, {"dataset": "CreditCardFraud", "generator": "CTGAN", "corr_mismatch": 0.10200108020667709, "mode_collapse_ratio": 0.9940637003600338, "most_collapsed": "Amount", "target_rate_shift": 0.032859078590785906, "mean_kl": 0.5348512741777554}, {"dataset": "CreditCardFraud", "generator": "TVAE", "corr_mismatch": 0.29266050132722254, "mode_collapse_ratio": 1.0780484187958022, "most_collapsed": "none", "target_rate_shift": 0.12804878048780488, "mean_kl": 4.275368007634283}, {"dataset": "HeartDisease", "generator": "GaussianCopula", "corr_mismatch": 0.11090692100998627, "mode_collapse_ratio": 1.0368000877632246, "most_collapsed": "thalach", "target_rate_shift": 0.03367003367003368, "mean_kl": 0.12444394365878556}, {"dataset": "HeartDisease", "generator": "CTGAN", "corr_mismatch": 0.16930451638118246, "mode_collapse_ratio": 42.02375964771885, "most_collapsed": "none", "target_rate_shift": 0.016835016835016814, "mean_kl": 6.104234618803495}, {"dataset": "HeartDisease", "generator": "TVAE", "corr_mismatch": 0.28594820855500214, "mode_collapse_ratio": 68.14050583516988, "most_collapsed": "none", "target_rate_shift": 0.4006734006734007, "mean_kl": 11.933535633399726}, {"dataset": "Injury1798", "generator": "GaussianCopula", "corr_mismatch": 0.028779922426445947, "mode_collapse_ratio": 2.4165056841713595, "most_collapsed": "right_FOOT_ANG_at_HS", "target_rate_shift": 0.009279475982532759, "mean_kl": 2.238707624347359}, {"dataset": "Injury1798", "generator": "CTGAN", "corr_mismatch": 0.11238660313419625, "mode_collapse_ratio": 60.270807102041296, "most_collapsed": "right_ANKLE_DF_PEAK_ANGLE", "target_rate_shift": 0.2210698689956332, "mean_kl": 0.5748017039431136}, {"dataset": "Injury1798", "generator": "TVAE", "corr_mismatch": 0.1732754525023684, "mode_collapse_ratio": 53.28547600936226, "most_collapsed": "speed_r", "target_rate_shift": 0.013100436681222738, "mean_kl": 3.6318396868294935}, {"dataset": "CaliforniaHousing", "generator": "GaussianCopula", "corr_mismatch": 0.10246632306011934, "mode_collapse_ratio": 1.1146744590948559, "most_collapsed": "Longitude", "target_rate_shift": 0.0028585271317830285, "mean_kl": 0.9841326172625398}, {"dataset": "CaliforniaHousing", "generator": "CTGAN", "corr_mismatch": 0.10225919551996256, "mode_collapse_ratio": 54.49318534108419, "most_collapsed": "AveOccup", "target_rate_shift": 0.00019379844961231463, "mean_kl": 0.3587148042853622}, {"dataset": "CaliforniaHousing", "generator": "TVAE", "corr_mismatch": 0.3137490077444622, "mode_collapse_ratio": 56.69803795660746, "most_collapsed": "none", "target_rate_shift": 0.03924418604651159, "mean_kl": 0.6925447471920884}, {"dataset": "GermanCredit", "generator": "GaussianCopula", "corr_mismatch": 0.04904671849094854, "mode_collapse_ratio": 1.0365553448226006, "most_collapsed": "age", "target_rate_shift": 0.0030000000000000027, "mean_kl": 0.026042277201359328}, {"dataset": "GermanCredit", "generator": "CTGAN", "corr_mismatch": 0.11389547408586288, "mode_collapse_ratio": 178.45090789178184, "most_collapsed": "none", "target_rate_shift": 0.01200000000000001, "mean_kl": 3.440924135553569}, {"dataset": "GermanCredit", "generator": "TVAE", "corr_mismatch": 0.09773609629343855, "mode_collapse_ratio": 215.938391775504, "most_collapsed": "none", "target_rate_shift": 0.08299999999999999, "mean_kl": 4.204013038358358}, {"dataset": "Adult", "generator": "GaussianCopula", "corr_mismatch": 0.0266038363982641, "mode_collapse_ratio": 6.649298972584348, "most_collapsed": "capital_loss", "target_rate_shift": 0.0005636231019163218, "mean_kl": 0.37373109829614415}, {"dataset": "Adult", "generator": "CTGAN", "corr_mismatch": 0.13972638809167373, "mode_collapse_ratio": 493.74121715008533, "most_collapsed": "none", "target_rate_shift": 0.0019229494065380326, "mean_kl": 0.564738772828459}, {"dataset": "Adult", "generator": "TVAE", "corr_mismatch": 0.27677139174598575, "mode_collapse_ratio": 281.580833968135, "most_collapsed": "fnlwgt", "target_rate_shift": 0.05981035740335522, "mean_kl": 6.6066366725673165}], "ablation_drift": [{"dataset": "CreditCardFraud", "ablation": "corr_perturb_0.1σ", "rho": 1.0, "mean_ks": 0.07968004922319644, "sign_agree": 1.0}, {"dataset": "CreditCardFraud", "ablation": "corr_perturb_0.3σ", "rho": 0.7545454545454545, "mean_ks": 0.12613444085525305, "sign_agree": 1.0}, {"dataset": "CreditCardFraud", "ablation": "corr_perturb_0.5σ", "rho": 0.6363636363636364, "mean_ks": 0.1298261805876019, "sign_agree": 1.0}, {"dataset": "CreditCardFraud", "ablation": "corr_perturb_1.0σ", "rho": 0.6636363636363638, "mean_ks": 0.173357944931549, "sign_agree": 1.0}, {"dataset": "CreditCardFraud", "ablation": "rare_remove_10%", "rho": 0.8909090909090911, "mean_ks": 0.14459313951699737, "sign_agree": 0.9090909090909091}, {"dataset": "CreditCardFraud", "ablation": "rare_remove_30%", "rho": 0.9272727272727275, "mean_ks": 0.16997385017689587, "sign_agree": 0.9090909090909091}, {"dataset": "CreditCardFraud", "ablation": "rare_remove_50%", "rho": 0.9090909090909091, "mean_ks": 0.24196277495769883, "sign_agree": 1.0}, {"dataset": "CreditCardFraud", "ablation": "rare_remove_70%", "rho": 0.7272727272727273, "mean_ks": 0.338409475465313, "sign_agree": 0.9090909090909091}, {"dataset": "CreditCardFraud", "ablation": "covariate_shift_0.25σ", "rho": 0.990909090909091, "mean_ks": 0.07598830949084757, "sign_agree": 0.9090909090909091}, {"dataset": "CreditCardFraud", "ablation": "covariate_shift_0.5σ", "rho": 0.9818181818181818, "mean_ks": 0.11336717428087986, "sign_agree": 0.9090909090909091}, {"dataset": "CreditCardFraud", "ablation": "covariate_shift_1.0σ", "rho": 0.990909090909091, "mean_ks": 0.15951392093524072, "sign_agree": 0.9090909090909091}, {"dataset": "CreditCardFraud", "ablation": "covariate_shift_2.0σ", "rho": 1.0, "mean_ks": 0.16505153053376403, "sign_agree": 0.9090909090909091}, {"dataset": "HeartDisease", "ablation": "corr_perturb_0.1σ", "rho": 0.9615384615384615, "mean_ks": 0.19230769230769226, "sign_agree": 1.0}, {"dataset": "HeartDisease", "ablation": "corr_perturb_0.3σ", "rho": 0.967032967032967, "mean_ks": 0.20897435897435898, "sign_agree": 0.8461538461538461}, {"dataset": "HeartDisease", "ablation": "corr_perturb_0.5σ", "rho": 0.9120879120879121, "mean_ks": 0.2602564102564103, "sign_agree": 0.8461538461538461}, {"dataset": "HeartDisease", "ablation": "corr_perturb_1.0σ", "rho": 0.8736263736263737, "mean_ks": 0.2692307692307692, "sign_agree": 0.7692307692307693}, {"dataset": "HeartDisease", "ablation": "rare_remove_10%", "rho": 0.9230769230769231, "mean_ks": 0.18846153846153843, "sign_agree": 1.0}, {"dataset": "HeartDisease", "ablation": "rare_remove_30%", "rho": 0.9615384615384615, "mean_ks": 0.20384615384615384, "sign_agree": 1.0}, {"dataset": "HeartDisease", "ablation": "rare_remove_50%", "rho": 0.7857142857142857, "mean_ks": 0.32820512820512826, "sign_agree": 0.8461538461538461}, {"dataset": "HeartDisease", "ablation": "rare_remove_70%", "rho": 0.6978021978021978, "mean_ks": 0.4256410256410256, "sign_agree": 0.8461538461538461}, {"dataset": "HeartDisease", "ablation": "covariate_shift_0.25σ", "rho": 0.9945054945054945, "mean_ks": 0.0794871794871795, "sign_agree": 1.0}, {"dataset": "HeartDisease", "ablation": "covariate_shift_0.5σ", "rho": 0.9945054945054945, "mean_ks": 0.0794871794871795, "sign_agree": 1.0}, {"dataset": "HeartDisease", "ablation": "covariate_shift_1.0σ", "rho": 0.9945054945054945, "mean_ks": 0.09487179487179488, "sign_agree": 1.0}, {"dataset": "HeartDisease", "ablation": "covariate_shift_2.0σ", "rho": 0.9945054945054945, "mean_ks": 0.09487179487179488, "sign_agree": 1.0}, {"dataset": "Injury1798", "ablation": "corr_perturb_0.1σ", "rho": 0.9821109123434706, "mean_ks": 0.045413260672116255, "sign_agree": 1.0}, {"dataset": "Injury1798", "ablation": "corr_perturb_0.3σ", "rho": 0.9928443649373881, "mean_ks": 0.04940962761126248, "sign_agree": 0.9333333333333333}, {"dataset": "Injury1798", "ablation": "corr_perturb_0.5σ", "rho": 0.9749552772808585, "mean_ks": 0.04977293369663944, "sign_agree": 1.0}, {"dataset": "Injury1798", "ablation": "corr_perturb_1.0σ", "rho": 0.846153846153846, "mean_ks": 0.07247956403269755, "sign_agree": 1.0}, {"dataset": "Injury1798", "ablation": "rare_remove_10%", "rho": 0.9749552772808585, "mean_ks": 0.08065395095367849, "sign_agree": 0.8666666666666667}, {"dataset": "Injury1798", "ablation": "rare_remove_30%", "rho": 0.9677996422182468, "mean_ks": 0.07756584922797456, "sign_agree": 0.8666666666666667}, {"dataset": "Injury1798", "ablation": "rare_remove_50%", "rho": 0.8354203935599284, "mean_ks": 0.0857402361489555, "sign_agree": 0.8666666666666667}, {"dataset": "Injury1798", "ablation": "rare_remove_70%", "rho": 0.7459749552772807, "mean_ks": 0.124613987284287, "sign_agree": 0.7333333333333333}, {"dataset": "Injury1798", "ablation": "covariate_shift_0.25σ", "rho": 0.9964221824686942, "mean_ks": 0.030336058128973664, "sign_agree": 1.0}, {"dataset": "Injury1798", "ablation": "covariate_shift_0.5σ", "rho": 0.9964221824686942, "mean_ks": 0.03832879200726612, "sign_agree": 1.0}, {"dataset": "Injury1798", "ablation": "covariate_shift_1.0σ", "rho": 0.9928443649373881, "mean_ks": 0.0555858310626703, "sign_agree": 1.0}, {"dataset": "Injury1798", "ablation": "covariate_shift_2.0σ", "rho": 0.9856887298747762, "mean_ks": 0.08828337874659399, "sign_agree": 1.0}, {"dataset": "CaliforniaHousing", "ablation": "corr_perturb_0.1σ", "rho": 0.9761904761904763, "mean_ks": 0.08118338178294573, "sign_agree": 0.625}, {"dataset": "CaliforniaHousing", "ablation": "corr_perturb_0.3σ", "rho": 0.880952380952381, "mean_ks": 0.12169937015503877, "sign_agree": 0.625}, {"dataset": "CaliforniaHousing", "ablation": "corr_perturb_0.5σ", "rho": 0.9047619047619048, "mean_ks": 0.15891472868217055, "sign_agree": 0.625}, {"dataset": "CaliforniaHousing", "ablation": "corr_perturb_1.0σ", "rho": 0.5476190476190477, "mean_ks": 0.20887839147286824, "sign_agree": 0.375}, {"dataset": "CaliforniaHousing", "ablation": "rare_remove_10%", "rho": 1.0, "mean_ks": 0.03215843023255814, "sign_agree": 0.875}, {"dataset": "CaliforniaHousing", "ablation": "rare_remove_30%", "rho": 1.0, "mean_ks": 0.050508720930232565, "sign_agree": 0.875}, {"dataset": "CaliforniaHousing", "ablation": "rare_remove_50%", "rho": 1.0, "mean_ks": 0.05326429263565892, "sign_agree": 0.875}, {"dataset": "CaliforniaHousing", "ablation": "rare_remove_70%", "rho": 1.0, "mean_ks": 0.07670179263565892, "sign_agree": 1.0}, {"dataset": "CaliforniaHousing", "ablation": "covariate_shift_0.25σ", "rho": 1.0, "mean_ks": 0.032703488372093026, "sign_agree": 0.875}, {"dataset": "CaliforniaHousing", "ablation": "covariate_shift_0.5σ", "rho": 1.0, "mean_ks": 0.06047117248062015, "sign_agree": 0.75}, {"dataset": "CaliforniaHousing", "ablation": "covariate_shift_1.0σ", "rho": 1.0, "mean_ks": 0.1062560562015504, "sign_agree": 0.625}, {"dataset": "CaliforniaHousing", "ablation": "covariate_shift_2.0σ", "rho": 0.9761904761904763, "mean_ks": 0.15382751937984496, "sign_agree": 0.625}, {"dataset": "GermanCredit", "ablation": "corr_perturb_0.1σ", "rho": 0.9789473684210527, "mean_ks": 0.12400000000000003, "sign_agree": 0.95}, {"dataset": "GermanCredit", "ablation": "corr_perturb_0.3σ", "rho": 0.9428571428571428, "mean_ks": 0.15325, "sign_agree": 1.0}, {"dataset": "GermanCredit", "ablation": "corr_perturb_0.5σ", "rho": 0.9458646616541352, "mean_ks": 0.15550000000000003, "sign_agree": 0.85}, {"dataset": "GermanCredit", "ablation": "corr_perturb_1.0σ", "rho": 0.9293233082706768, "mean_ks": 0.16225, "sign_agree": 0.85}, {"dataset": "GermanCredit", "ablation": "rare_remove_10%", "rho": 0.8962406015037594, "mean_ks": 0.22949999999999998, "sign_agree": 0.9}, {"dataset": "GermanCredit", "ablation": "rare_remove_30%", "rho": 0.9263157894736842, "mean_ks": 0.22749999999999998, "sign_agree": 0.95}, {"dataset": "GermanCredit", "ablation": "rare_remove_50%", "rho": 0.9248120300751879, "mean_ks": 0.21575000000000003, "sign_agree": 0.9}, {"dataset": "GermanCredit", "ablation": "rare_remove_70%", "rho": 0.8300751879699247, "mean_ks": 0.27749999999999997, "sign_agree": 0.8}, {"dataset": "GermanCredit", "ablation": "covariate_shift_0.25σ", "rho": 0.9894736842105262, "mean_ks": 0.09849999999999999, "sign_agree": 0.95}, {"dataset": "GermanCredit", "ablation": "covariate_shift_0.5σ", "rho": 0.9894736842105262, "mean_ks": 0.09849999999999999, "sign_agree": 0.95}, {"dataset": "GermanCredit", "ablation": "covariate_shift_1.0σ", "rho": 0.9894736842105262, "mean_ks": 0.09849999999999999, "sign_agree": 0.95}, {"dataset": "GermanCredit", "ablation": "covariate_shift_2.0σ", "rho": 0.9774436090225563, "mean_ks": 0.13775, "sign_agree": 0.9}, {"dataset": "Adult", "ablation": "corr_perturb_0.1σ", "rho": 1.0, "mean_ks": 0.07008674512403999, "sign_agree": 1.0}, {"dataset": "Adult", "ablation": "corr_perturb_0.3σ", "rho": 1.0, "mean_ks": 0.14194154373169787, "sign_agree": 1.0}, {"dataset": "Adult", "ablation": "corr_perturb_0.5σ", "rho": 0.8285714285714287, "mean_ks": 0.22451516658378914, "sign_agree": 1.0}, {"dataset": "Adult", "ablation": "corr_perturb_1.0σ", "rho": 0.3142857142857143, "mean_ks": 0.33703519531465825, "sign_agree": 1.0}, {"dataset": "Adult", "ablation": "rare_remove_10%", "rho": 1.0, "mean_ks": 0.11437095972153156, "sign_agree": 1.0}, {"dataset": "Adult", "ablation": "rare_remove_30%", "rho": 1.0, "mean_ks": 0.1267197082711752, "sign_agree": 1.0}, {"dataset": "Adult", "ablation": "rare_remove_50%", "rho": 1.0, "mean_ks": 0.12108403779214322, "sign_agree": 1.0}, {"dataset": "Adult", "ablation": "rare_remove_70%", "rho": 0.942857142857143, "mean_ks": 0.2862589093320073, "sign_agree": 0.8333333333333334}, {"dataset": "Adult", "ablation": "covariate_shift_0.25σ", "rho": 1.0, "mean_ks": 0.07202055362174706, "sign_agree": 1.0}, {"dataset": "Adult", "ablation": "covariate_shift_0.5σ", "rho": 1.0, "mean_ks": 0.134068180562462, "sign_agree": 1.0}, {"dataset": "Adult", "ablation": "covariate_shift_1.0σ", "rho": 1.0, "mean_ks": 0.16694292502348196, "sign_agree": 1.0}, {"dataset": "Adult", "ablation": "covariate_shift_2.0σ", "rho": 0.942857142857143, "mean_ks": 0.24733410685673243, "sign_agree": 1.0}], "correction_overall": {"experiment": "guarded_correction", "n_results": 540, "overall": {"SDC-Corr": 0.15873703999490565, "SDC-Guarded": 0.15891117207131725, "FSC-Corr": 0.13817651978958803, "FSC-Guarded": 0.1379160787402311}, "key_finding": "Guarded correction prevents over-correction on high-ρ scenarios"}, "correction_by_dataset": [{"dataset": "Adult", "orig_rho": 0.3887, "sdc_rho": 0.5296, "sdc_delta": 0.141, "guarded_rho": 0.5284, "guarded_delta": 0.1397, "fsc_rho": 0.5322, "fsc_delta": 0.1435, "fsc_guarded_rho": 0.5309, "fsc_guarded_delta": 0.1422}, {"dataset": "CaliforniaHousing", "orig_rho": 0.3479, "sdc_rho": 0.5384, "sdc_delta": 0.1905, "guarded_rho": 0.5384, "guarded_delta": 0.1905, "fsc_rho": 0.5339, "fsc_delta": 0.186, "fsc_guarded_rho": 0.5328, "fsc_guarded_delta": 0.1849}, {"dataset": "CreditCardFraud", "orig_rho": 0.4615, "sdc_rho": 0.5623, "sdc_delta": 0.1008, "guarded_rho": 0.5625, "guarded_delta": 0.101, "fsc_rho": 0.5697, "fsc_delta": 0.1082, "fsc_guarded_rho": 0.5703, "fsc_guarded_delta": 0.1088}, {"dataset": "GermanCredit", "orig_rho": 0.2072, "sdc_rho": 0.4312, "sdc_delta": 0.224, "guarded_rho": 0.4312, "guarded_delta": 0.224, "fsc_rho": 0.3545, "fsc_delta": 0.1473, "fsc_guarded_rho": 0.3545, "fsc_guarded_delta": 0.1473}, {"dataset": "HeartDisease", "orig_rho": 0.4387, "sdc_rho": 0.6493, "sdc_delta": 0.2106, "guarded_rho": 0.6493, "guarded_delta": 0.2106, "fsc_rho": 0.6193, "fsc_delta": 0.1806, "fsc_guarded_rho": 0.6193, "fsc_guarded_delta": 0.1806}, {"dataset": "Injury1798", "orig_rho": 0.6418, "sdc_rho": 0.7273, "sdc_delta": 0.0856, "guarded_rho": 0.7294, "guarded_delta": 0.0877, "fsc_rho": 0.7053, "fsc_delta": 0.0635, "fsc_guarded_rho": 0.7054, "fsc_guarded_delta": 0.0637}], "correction_by_generator": [{"generator": "CTGAN", "orig_rho": 0.358, "sdc_delta": 0.1571, "guarded_delta": 0.1577, "fsc_delta": 0.1417, "fsc_guarded_delta": 0.1425}, {"generator": "GaussianCopula", "orig_rho": 0.6212, "sdc_delta": 0.0957, "guarded_delta": 0.0956, "fsc_delta": 0.0699, "fsc_guarded_delta": 0.0683}, {"generator": "TVAE", "orig_rho": 0.2637, "sdc_delta": 0.2234, "guarded_delta": 0.2234, "fsc_delta": 0.203, "fsc_guarded_delta": 0.203}], "fsc_curve": [{"fraction": 0.05, "fsc_delta": 0.0886, "fsc_guarded_delta": 0.0882, "full_delta": 0.1573}, {"fraction": 0.1, "fsc_delta": 0.1156, "fsc_guarded_delta": 0.1151, "full_delta": 0.1573}, {"fraction": 0.2, "fsc_delta": 0.1372, "fsc_guarded_delta": 0.137, "full_delta": 0.1573}, {"fraction": 0.3, "fsc_delta": 0.1468, "fsc_guarded_delta": 0.1469, "full_delta": 0.1573}, {"fraction": 0.5, "fsc_delta": 0.1521, "fsc_guarded_delta": 0.1519, "full_delta": 0.1573}], "fsc_retention": [{"fraction": 0.05, "fsc_delta": 0.0886, "full_delta": 0.1573, "retention": 0.564}, {"fraction": 0.1, "fsc_delta": 0.1156, "full_delta": 0.1573, "retention": 0.735}, {"fraction": 0.2, "fsc_delta": 0.1372, "full_delta": 0.1573, "retention": 0.873}, {"fraction": 0.3, "fsc_delta": 0.1468, "full_delta": 0.1573, "retention": 0.933}, {"fraction": 0.5, "fsc_delta": 0.1521, "full_delta": 0.1573, "retention": 0.967}], "fair_baseline_curve": [{"fraction": 0.05, "fsc_delta": 0.0894, "distill_delta": 0.1848, "ft_delta": 0.1613, "sdc_delta": 0.1582}, {"fraction": 0.1, "fsc_delta": 0.1167, "distill_delta": 0.2189, "ft_delta": 0.2171, "sdc_delta": 0.1582}, {"fraction": 0.2, "fsc_delta": 0.1386, "distill_delta": 0.2571, "ft_delta": 0.2908, "sdc_delta": 0.1582}, {"fraction": 0.5, "fsc_delta": 0.1529, "distill_delta": 0.2777, "ft_delta": 0.3661, "sdc_delta": 0.1582}, {"fraction": 1.0, "fsc_delta": 0.1582, "distill_delta": 0.3007, "ft_delta": 0.4076, "sdc_delta": 0.1582}], "interaction": [{"dataset": "CreditCardFraud", "generator": "GaussianCopula", "rho": 0.49061684584072657, "pair_overlap": 0.8}, {"dataset": "CreditCardFraud", "generator": "CTGAN", "rho": 0.5673938002296213, "pair_overlap": 0.6}, {"dataset": "CreditCardFraud", "generator": "TVAE", "rho": 0.44561110531259795, "pair_overlap": 0.6}, {"dataset": "HeartDisease", "generator": "GaussianCopula", "rho": 0.7102723363592929, "pair_overlap": 0.4}, {"dataset": "HeartDisease", "generator": "CTGAN", "rho": 0.5597674901670884, "pair_overlap": 0.2}, {"dataset": "HeartDisease", "generator": "TVAE", "rho": 0.3677263770393658, "pair_overlap": 0.6}, {"dataset": "Injury1798", "generator": "GaussianCopula", "rho": 0.6516344687050067, "pair_overlap": 1.0}, {"dataset": "Injury1798", "generator": "CTGAN", "rho": 0.6640250774866159, "pair_overlap": 0.4}, {"dataset": "Injury1798", "generator": "TVAE", "rho": 0.6893702451394759, "pair_overlap": 0.8}, {"dataset": "CaliforniaHousing", "generator": "GaussianCopula", "rho": 0.5562419562419563, "pair_overlap": 0.8}, {"dataset": "CaliforniaHousing", "generator": "CTGAN", "rho": 0.6550836550836551, "pair_overlap": 0.6}, {"dataset": "CaliforniaHousing", "generator": "TVAE", "rho": 0.32921492921492923, "pair_overlap": 0.4}, {"dataset": "GermanCredit", "generator": "GaussianCopula", "rho": 0.797366315400738, "pair_overlap": 0.4}, {"dataset": "GermanCredit", "generator": "CTGAN", "rho": 0.36126831512214397, "pair_overlap": 0.4}, {"dataset": "GermanCredit", "generator": "TVAE", "rho": 0.37504510954249043, "pair_overlap": 0.4}, {"dataset": "Adult", "generator": "GaussianCopula", "rho": 0.9259740259740258, "pair_overlap": 1.0}, {"dataset": "Adult", "generator": "CTGAN", "rho": 0.7792207792207791, "pair_overlap": 0.8}, {"dataset": "Adult", "generator": "TVAE", "rho": 0.3974025974025974, "pair_overlap": 0.8}], "persample": [{"dataset": "CreditCardFraud", "model": "XGBoost", "generator": "GaussianCopula", "cos_sim": 0.5536626364428169, "per_rho": 0.3608521765882172, "sign": 0.649900015382249}, {"dataset": "CreditCardFraud", "model": "XGBoost", "generator": "CTGAN", "cos_sim": 0.5324280382925883, "per_rho": 0.25208429472388866, "sign": 0.5688355637594217}, {"dataset": "CreditCardFraud", "model": "XGBoost", "generator": "TVAE", "cos_sim": 0.35811895872662236, "per_rho": 0.418197200430703, "sign": 0.5731425934471619}, {"dataset": "CreditCardFraud", "model": "RandomForest", "generator": "GaussianCopula", "cos_sim": 0.7631251112150105, "per_rho": 0.5847869558529458, "sign": 0.7934163974773113}, {"dataset": "CreditCardFraud", "model": "RandomForest", "generator": "CTGAN", "cos_sim": 0.43639212824498635, "per_rho": 0.2636055991385941, "sign": 0.6466697431164437}, {"dataset": "CreditCardFraud", "model": "RandomForest", "generator": "TVAE", "cos_sim": 0.07876085317566733, "per_rho": 0.12139670819873866, "sign": 0.49746192893401014}, {"dataset": "CreditCardFraud", "model": "MLP", "generator": "GaussianCopula", "cos_sim": 0.7773369654293012, "per_rho": 0.794909090909091, "sign": 0.6781818181818181}, {"dataset": "CreditCardFraud", "model": "MLP", "generator": "CTGAN", "cos_sim": 0.15339640081998776, "per_rho": 0.27540909090909094, "sign": 0.47681818181818175}, {"dataset": "CreditCardFraud", "model": "MLP", "generator": "TVAE", "cos_sim": -0.07351515773965789, "per_rho": 0.21600000000000003, "sign": 0.4922727272727272}, {"dataset": "HeartDisease", "model": "XGBoost", "generator": "GaussianCopula", "cos_sim": 0.2962511847554859, "per_rho": 0.2984432234432234, "sign": 0.7192307692307691}, {"dataset": "HeartDisease", "model": "XGBoost", "generator": "CTGAN", "cos_sim": 0.20455762175201678, "per_rho": 0.2033882783882784, "sign": 0.535897435897436}, {"dataset": "HeartDisease", "model": "XGBoost", "generator": "TVAE", "cos_sim": 0.6860924986118822, "per_rho": 0.4831501831501831, "sign": 0.6038461538461539}, {"dataset": "HeartDisease", "model": "RandomForest", "generator": "GaussianCopula", "cos_sim": 0.5042525438848318, "per_rho": 0.5484432234432235, "sign": 0.8166666666666665}, {"dataset": "HeartDisease", "model": "RandomForest", "generator": "CTGAN", "cos_sim": 0.1721665306658829, "per_rho": 0.16272893772893773, "sign": 0.5333333333333333}, {"dataset": "HeartDisease", "model": "RandomForest", "generator": "TVAE", "cos_sim": 0.5774009129454254, "per_rho": 0.7104395604395604, "sign": 0.746153846153846}, {"dataset": "HeartDisease", "model": "MLP", "generator": "GaussianCopula", "cos_sim": 0.9015783590870907, "per_rho": 0.7175925925925923, "sign": 0.7435897435897434}, {"dataset": "HeartDisease", "model": "MLP", "generator": "CTGAN", "cos_sim": -0.13173230745528774, "per_rho": 0.23972222222222214, "sign": 0.5692307692307692}, {"dataset": "HeartDisease", "model": "MLP", "generator": "TVAE", "cos_sim": -0.29760240016673944, "per_rho": 0.07166666666666667, "sign": 0.5025641025641026}, {"dataset": "Injury1798", "model": "XGBoost", "generator": "GaussianCopula", "cos_sim": 0.36341099420775297, "per_rho": 0.3474945679990292, "sign": 0.6512261580381471}, {"dataset": "Injury1798", "model": "XGBoost", "generator": "CTGAN", "cos_sim": 0.21241447840504754, "per_rho": 0.18258080554512976, "sign": 0.6319709355131699}, {"dataset": "Injury1798", "model": "XGBoost", "generator": "TVAE", "cos_sim": 0.37437528285307264, "per_rho": 0.3094812164579607, "sign": 0.6704813805631245}, {"dataset": "Injury1798", "model": "RandomForest", "generator": "GaussianCopula", "cos_sim": 0.6664856947999033, "per_rho": 0.5960750305778729, "sign": 0.7247956403269755}, {"dataset": "Injury1798", "model": "RandomForest", "generator": "CTGAN", "cos_sim": 0.16814271322096586, "per_rho": 0.1747330041481236, "sign": 0.6399636693914623}, {"dataset": "Injury1798", "model": "RandomForest", "generator": "TVAE", "cos_sim": 0.6323314685040787, "per_rho": 0.6430858919928054, "sign": 0.7941871026339691}, {"dataset": "Injury1798", "model": "MLP", "generator": "GaussianCopula", "cos_sim": -0.08336262251260251, "per_rho": -0.21309259259259264, "sign": 0.4663333333333333}, {"dataset": "Injury1798", "model": "MLP", "generator": "CTGAN", "cos_sim": 0.23063021543970222, "per_rho": 0.1578888888888889, "sign": 0.5486666666666666}, {"dataset": "Injury1798", "model": "MLP", "generator": "TVAE", "cos_sim": 0.5588536748846651, "per_rho": 0.32305555555555565, "sign": 0.5963333333333333}, {"dataset": "CaliforniaHousing", "model": "XGBoost", "generator": "GaussianCopula", "cos_sim": 0.25145512151260785, "per_rho": 0.103734080841639, "sign": 0.5214389534883721}, {"dataset": "CaliforniaHousing", "model": "XGBoost", "generator": "CTGAN", "cos_sim": 0.7507350635981292, "per_rho": 0.5948170450350684, "sign": 0.6564922480620154}, {"dataset": "CaliforniaHousing", "model": "XGBoost", "generator": "TVAE", "cos_sim": 0.27212758074029003, "per_rho": 0.20887550756736808, "sign": 0.5756419573643411}, {"dataset": "CaliforniaHousing", "model": "RandomForest", "generator": "GaussianCopula", "cos_sim": 0.7201870974479347, "per_rho": 0.4779150516795866, "sign": 0.6721475290697675}, {"dataset": "CaliforniaHousing", "model": "RandomForest", "generator": "CTGAN", "cos_sim": 0.6839324368287208, "per_rho": 0.5034260797342194, "sign": 0.5700096899224806}, {"dataset": "CaliforniaHousing", "model": "RandomForest", "generator": "TVAE", "cos_sim": 0.24223121628668212, "per_rho": 0.18843438538205984, "sign": 0.5874515503875969}, {"dataset": "CaliforniaHousing", "model": "MLP", "generator": "GaussianCopula", "cos_sim": 0.9389417862716881, "per_rho": 0.7443386248143488, "sign": 0.5925}, {"dataset": "CaliforniaHousing", "model": "MLP", "generator": "CTGAN", "cos_sim": 0.8953756653428026, "per_rho": 0.6621428571428573, "sign": 0.72375}, {"dataset": "CaliforniaHousing", "model": "MLP", "generator": "TVAE", "cos_sim": 0.30259909271024577, "per_rho": 0.15476190476190477, "sign": 0.568125}, {"dataset": "GermanCredit", "model": "XGBoost", "generator": "GaussianCopula", "cos_sim": 0.2444928527893583, "per_rho": 0.2344812030075188, "sign": 0.5922499999999999}, {"dataset": "GermanCredit", "model": "XGBoost", "generator": "CTGAN", "cos_sim": 0.07640932093221997, "per_rho": -0.006744360902255639, "sign": 0.49200000000000005}, {"dataset": "GermanCredit", "model": "XGBoost", "generator": "TVAE", "cos_sim": 0.42546601035417164, "per_rho": 0.2281503759398496, "sign": 0.55875}, {"dataset": "GermanCredit", "model": "RandomForest", "generator": "GaussianCopula", "cos_sim": 0.5005855049116348, "per_rho": 0.41596240601503753, "sign": 0.65375}, {"dataset": "GermanCredit", "model": "RandomForest", "generator": "CTGAN", "cos_sim": 0.11135921061487586, "per_rho": 0.06989473684210525, "sign": 0.5227499999999999}, {"dataset": "GermanCredit", "model": "RandomForest", "generator": "TVAE", "cos_sim": 0.5113009123372, "per_rho": 0.37180451127819547, "sign": 0.5725}, {"dataset": "GermanCredit", "model": "MLP", "generator": "GaussianCopula", "cos_sim": 0.0, "per_rho": 0.0, "sign": 0.9984999999999999}, {"dataset": "GermanCredit", "model": "MLP", "generator": "CTGAN", "cos_sim": 0.898740035341791, "per_rho": 0.6888586958743191, "sign": 0.501}, {"dataset": "GermanCredit", "model": "MLP", "generator": "TVAE", "cos_sim": 0.0, "per_rho": 0.0, "sign": 0.9984999999999999}, {"dataset": "Adult", "model": "XGBoost", "generator": "GaussianCopula", "cos_sim": 0.7423678157596328, "per_rho": 0.7251876583552368, "sign": 0.8373114536714735}, {"dataset": "Adult", "model": "XGBoost", "generator": "CTGAN", "cos_sim": 0.4285160259768032, "per_rho": 0.5681750372948782, "sign": 0.6918614288082214}, {"dataset": "Adult", "model": "XGBoost", "generator": "TVAE", "cos_sim": 0.17066391761239336, "per_rho": 0.04055314816130331, "sign": 0.5206088734184209}, {"dataset": "Adult", "model": "RandomForest", "generator": "GaussianCopula", "cos_sim": 0.8192162556261312, "per_rho": 0.8277568610736189, "sign": 0.8534725675451682}, {"dataset": "Adult", "model": "RandomForest", "generator": "CTGAN", "cos_sim": 0.4223222232013844, "per_rho": 0.6154483673131113, "sign": 0.6996242886347313}, {"dataset": "Adult", "model": "RandomForest", "generator": "TVAE", "cos_sim": 0.0869230439852106, "per_rho": 0.04670029125523904, "sign": 0.583236642908448}, {"dataset": "Adult", "model": "MLP", "generator": "GaussianCopula", "cos_sim": 0.7517056024136167, "per_rho": 0.6858994268302778, "sign": 0.4641666666666666}, {"dataset": "Adult", "model": "MLP", "generator": "CTGAN", "cos_sim": 0.8619825157982484, "per_rho": 0.1702292743821112, "sign": 0.2533333333333333}, {"dataset": "Adult", "model": "MLP", "generator": "TVAE", "cos_sim": 0.9801448587857408, "per_rho": 0.7444416234274587, "sign": 0.7858333333333333}], "conditional": [{"dataset": "CreditCardFraud", "class": "class_0", "generator": "GaussianCopula", "rho": 0.7363636363636363, "sign_agree": 0.8181818181818182, "n": 493}, {"dataset": "CreditCardFraud", "class": "class_0", "generator": "CTGAN", "rho": 0.33636363636363636, "sign_agree": 0.6363636363636364, "n": 493}, {"dataset": "CreditCardFraud", "class": "class_0", "generator": "TVAE", "rho": 0.3545454545454546, "sign_agree": 0.45454545454545453, "n": 493}, {"dataset": "CreditCardFraud", "class": "class_1", "generator": "GaussianCopula", "rho": 0.6363636363636364, "sign_agree": 0.8181818181818182, "n": 98}, {"dataset": "CreditCardFraud", "class": "class_1", "generator": "CTGAN", "rho": 0.6727272727272727, "sign_agree": 0.6363636363636364, "n": 98}, {"dataset": "CreditCardFraud", "class": "class_1", "generator": "TVAE", "rho": -0.22727272727272727, "sign_agree": 0.6363636363636364, "n": 98}, {"dataset": "HeartDisease", "class": "class_0", "generator": "GaussianCopula", "rho": 0.3516483516483516, "sign_agree": 0.8461538461538461, "n": 32}, {"dataset": "HeartDisease", "class": "class_0", "generator": "CTGAN", "rho": 0.24175824175824176, "sign_agree": 0.46153846153846156, "n": 32}, {"dataset": "HeartDisease", "class": "class_0", "generator": "TVAE", "rho": 0.26373626373626374, "sign_agree": 0.8461538461538461, "n": 32}, {"dataset": "HeartDisease", "class": "class_1", "generator": "GaussianCopula", "rho": 0.03296703296703297, "sign_agree": 0.9230769230769231, "n": 28}, {"dataset": "HeartDisease", "class": "class_1", "generator": "CTGAN", "rho": 0.46703296703296704, "sign_agree": 0.5384615384615384, "n": 28}, {"dataset": "HeartDisease", "class": "class_1", "generator": "TVAE", "rho": 0.33516483516483514, "sign_agree": 0.5384615384615384, "n": 28}, {"dataset": "Injury1798", "class": "class_0", "generator": "GaussianCopula", "rho": 0.77489069719033, "sign_agree": 0.4666666666666667, "n": 132}, {"dataset": "Injury1798", "class": "class_0", "generator": "CTGAN", "rho": 0.24150268336314845, "sign_agree": 0.6, "n": 132}, {"dataset": "Injury1798", "class": "class_0", "generator": "TVAE", "rho": 0.6493738819320215, "sign_agree": 0.6, "n": 132}, {"dataset": "Injury1798", "class": "class_1", "generator": "GaussianCopula", "rho": 0.6565046184529185, "sign_agree": 0.9333333333333333, "n": 235}, {"dataset": "Injury1798", "class": "class_1", "generator": "CTGAN", "rho": 0.2880143112701252, "sign_agree": 0.6666666666666666, "n": 235}, {"dataset": "Injury1798", "class": "class_1", "generator": "TVAE", "rho": 0.6135957066189625, "sign_agree": 0.7333333333333333, "n": 235}, {"dataset": "CaliforniaHousing", "class": "class_0", "generator": "GaussianCopula", "rho": 0.6190476190476191, "sign_agree": 0.625, "n": 2063}, {"dataset": "CaliforniaHousing", "class": "class_0", "generator": "CTGAN", "rho": 0.6190476190476191, "sign_agree": 0.875, "n": 2063}, {"dataset": "CaliforniaHousing", "class": "class_0", "generator": "TVAE", "rho": -0.3333333333333334, "sign_agree": 0.625, "n": 2063}, {"dataset": "CaliforniaHousing", "class": "class_1", "generator": "GaussianCopula", "rho": 0.5714285714285715, "sign_agree": 0.5, "n": 2065}, {"dataset": "CaliforniaHousing", "class": "class_1", "generator": "CTGAN", "rho": 0.523809523809524, "sign_agree": 0.5, "n": 2065}, {"dataset": "CaliforniaHousing", "class": "class_1", "generator": "TVAE", "rho": -0.4285714285714286, "sign_agree": 0.625, "n": 2065}, {"dataset": "GermanCredit", "class": "class_0", "generator": "GaussianCopula", "rho": 0.6556390977443608, "sign_agree": 0.9, "n": 140}, {"dataset": "GermanCredit", "class": "class_0", "generator": "CTGAN", "rho": -0.09624060150375939, "sign_agree": 0.65, "n": 140}, {"dataset": "GermanCredit", "class": "class_0", "generator": "TVAE", "rho": 0.12932330827067667, "sign_agree": 0.7, "n": 140}, {"dataset": "GermanCredit", "class": "class_1", "generator": "GaussianCopula", "rho": 0.6962406015037594, "sign_agree": 0.5, "n": 60}, {"dataset": "GermanCredit", "class": "class_1", "generator": "CTGAN", "rho": -0.11578947368421053, "sign_agree": 0.5, "n": 60}, {"dataset": "GermanCredit", "class": "class_1", "generator": "TVAE", "rho": 0.13984962406015036, "sign_agree": 0.5, "n": 60}, {"dataset": "Adult", "class": "class_0", "generator": "GaussianCopula", "rho": 0.8857142857142858, "sign_agree": 1.0, "n": 4531}, {"dataset": "Adult", "class": "class_0", "generator": "CTGAN", "rho": -0.3142857142857143, "sign_agree": 0.8333333333333334, "n": 4531}, {"dataset": "Adult", "class": "class_0", "generator": "TVAE", "rho": -0.8285714285714287, "sign_agree": 0.6666666666666666, "n": 4531}, {"dataset": "Adult", "class": "class_1", "generator": "GaussianCopula", "rho": 0.8857142857142858, "sign_agree": 0.6666666666666666, "n": 1502}, {"dataset": "Adult", "class": "class_1", "generator": "CTGAN", "rho": 0.6, "sign_agree": 0.6666666666666666, "n": 1502}, {"dataset": "Adult", "class": "class_1", "generator": "TVAE", "rho": -0.7714285714285715, "sign_agree": 0.5, "n": 1502}], "baseline_perf": [{"dataset": "CreditCardFraud", "model": "XGBoost", "auroc_mean": 0.9798431402872675, "auroc_std": 0.006054291867836561, "accuracy_mean": 0.9751269035532996, "accuracy_std": 0.0074546161664672496}, {"dataset": "CreditCardFraud", "model": "RandomForest", "auroc_mean": 0.977644946442697, "auroc_std": 0.0065843019062455654, "accuracy_mean": 0.9736040609137057, "accuracy_std": 0.0058711849654475255}, {"dataset": "CreditCardFraud", "model": "MLP", "auroc_mean": 0.9526560713061973, "auroc_std": 0.028605545475804118, "accuracy_mean": 0.9680203045685281, "accuracy_std": 0.009614939184551849}, {"dataset": "HeartDisease", "model": "XGBoost", "auroc_mean": 0.8950892857142856, "auroc_std": 0.03774236094826313, "accuracy_mean": 0.8233333333333333, "accuracy_std": 0.04358898943540673}, {"dataset": "HeartDisease", "model": "RandomForest", "auroc_mean": 0.9147321428571427, "auroc_std": 0.03821204307504883, "accuracy_mean": 0.82, "accuracy_std": 0.050990195135927854}, {"dataset": "HeartDisease", "model": "MLP", "auroc_mean": 0.6800223214285713, "auroc_std": 0.126005452830489, "accuracy_mean": 0.6533333333333333, "accuracy_std": 0.08459051693633014}, {"dataset": "Injury1798", "model": "XGBoost", "auroc_mean": 0.7878143133462283, "auroc_std": 0.022612442025768724, "accuracy_mean": 0.7564032697547683, "accuracy_std": 0.017498195485561113}, {"dataset": "Injury1798", "model": "RandomForest", "auroc_mean": 0.7755802707930368, "auroc_std": 0.027345678929977923, "accuracy_mean": 0.7471389645776567, "accuracy_std": 0.014459399630977213}, {"dataset": "Injury1798", "model": "MLP", "auroc_mean": 0.6716537717601547, "auroc_std": 0.032646620988823934, "accuracy_mean": 0.6752043596730246, "accuracy_std": 0.0180248887286553}, {"dataset": "CaliforniaHousing", "model": "XGBoost", "auroc_mean": 0.9676737607964141, "auroc_std": 0.0028186258437466203, "accuracy_mean": 0.9061773255813954, "accuracy_std": 0.005202471011223285}, {"dataset": "CaliforniaHousing", "model": "RandomForest", "auroc_mean": 0.9452294373717018, "auroc_std": 0.004048443130164835, "accuracy_mean": 0.872093023255814, "accuracy_std": 0.005857195457510898}, {"dataset": "CaliforniaHousing", "model": "MLP", "auroc_mean": 0.8696083538043166, "auroc_std": 0.01429488219962658, "accuracy_mean": 0.7827761627906977, "accuracy_std": 0.016254844961240317}, {"dataset": "GermanCredit", "model": "XGBoost", "auroc_mean": 0.7772261904761903, "auroc_std": 0.02181341265495449, "accuracy_mean": 0.753, "accuracy_std": 0.028740215726399853}, {"dataset": "GermanCredit", "model": "RandomForest", "auroc_mean": 0.7897619047619047, "auroc_std": 0.024496285988102082, "accuracy_mean": 0.768, "accuracy_std": 0.027946377224964267}, {"dataset": "GermanCredit", "model": "MLP", "auroc_mean": 0.47320833333333334, "auroc_std": 0.07005002792991491, "accuracy_mean": 0.7015, "accuracy_std": 0.003201562118716427}, {"dataset": "Adult", "model": "XGBoost", "auroc_mean": 0.8719285122962658, "auroc_std": 0.0026416093758691874, "accuracy_mean": 0.8393502403447703, "accuracy_std": 0.0019860190022542943}, {"dataset": "Adult", "model": "RandomForest", "auroc_mean": 0.857135913242727, "auroc_std": 0.0036144330283858117, "accuracy_mean": 0.8313774241670812, "accuracy_std": 0.001605429513776267}, {"dataset": "Adult", "model": "MLP", "auroc_mean": 0.6082753488984449, "auroc_std": 0.01225832038038765, "accuracy_mean": 0.7879496104757169, "accuracy_std": 0.001350776246105039}], "ablation_alpha": {"fixed_0.1": 0.0397, "fixed_0.3": 0.1027, "fixed_0.5": 0.1477, "fixed_0.7": 0.2166, "fixed_0.9": 0.2267, "cv": 0.3203, "adaptive": 0.2542}, "ablation_prior": {"correlation": 0.1477, "uniform": 0.0, "random": -0.0679, "mi": 0.2414}, "ablation_sample": {"random_sampling": 0.1337, "density_sampling": 0.1255, "boundary_sampling": 0.0781}};
+
+// ---------- Common helpers ----------
+const GEN_COLORS = { GaussianCopula:'#2ecc71', CTGAN:'#e74c3c', TVAE:'#3498db' };
+const MODEL_COLORS = { XGBoost:'#1d4ed8', RandomForest:'#0f766e', MLP:'#b45309' };
+const DS_ORDER = ['CreditCardFraud','HeartDisease','Injury1798','CaliforniaHousing','GermanCredit','Adult'];
+const DS_LABELS = {
+  CreditCardFraud:'Credit Card Fraud', HeartDisease:'Heart Disease', Injury1798:'Injury (1798)',
+  CaliforniaHousing:'California Housing', GermanCredit:'German Credit', Adult:'Adult Income'
+};
+const GENS = ['GaussianCopula','CTGAN','TVAE'];
+const MODELS = ['XGBoost','RandomForest','MLP'];
+
+function fmt(v, n=3){
+  if (v===null||v===undefined||Number.isNaN(v)) return '—';
+  return Number(v).toFixed(n);
+}
+function pickBy(rows, filters){
+  return rows.find(r => Object.entries(filters).every(([k,v]) => r[k] === v));
+}
+function pivot(rows, idxKey, colKey, valKey){
+  const out = {};
+  for (const r of rows){
+    out[r[idxKey]] = out[r[idxKey]] || {};
+    out[r[idxKey]][r[colKey]] = r[valKey];
+  }
+  return out;
+}
+function rhoColor(v){
+  if (v === null || v === undefined) return '#f8fafc';
+  if (v < 0.3) return '#fee2e2';
+  if (v < 0.6) return '#fef3c7';
+  return '#dcfce7';
+}
+function gapColor(v){
+  if (v === null || v === undefined) return '#f8fafc';
+  if (v < 0.2) return '#dcfce7';
+  if (v < 0.5) return '#fef3c7';
+  return '#fee2e2';
+}
+
+// ---------- Section 2: meta ----------
+const m = DATA.meta;
+document.getElementById('m_ds').textContent  = m.datasets.length;
+document.getElementById('m_gen').textContent = m.generators.length;
+document.getElementById('m_mod').textContent = m.models.length;
+document.getElementById('m_seed').textContent= m.n_seeds;
+document.getElementById('m_corr').textContent= m.n_correction_rows;
+document.getElementById('m_fsc').textContent = m.n_fsc_rows;
+document.getElementById('m_fb').textContent  = m.n_fb_rows;
+
+// ---------- Section 3: quality ----------
+(function(){
+  const q = DATA.quality;
+  const ksByGen = {}; const aurocByGen = {};
+  GENS.forEach(g => { ksByGen[g]=[]; aurocByGen[g]=[]; });
+  DS_ORDER.forEach(ds => {
+    GENS.forEach(g => {
+      const r = pickBy(q, {dataset:ds, generator:g});
+      ksByGen[g].push(r ? r.mean_ks : null);
+      aurocByGen[g].push(r ? r.tstr_auroc : null);
+    });
+  });
+  const labels = DS_ORDER.map(d => DS_LABELS[d] || d);
+
+  new Chart(document.getElementById('quality_ks'), {
+    type:'bar',
+    data:{ labels, datasets: GENS.map(g => ({label:g, data:ksByGen[g], backgroundColor:GEN_COLORS[g]})) },
+    options: { plugins:{legend:{position:'top'}}, responsive:true, maintainAspectRatio:false,
+               scales:{y:{title:{display:true,text:'Mean KS'}, beginAtZero:true}} }
+  });
+
+  new Chart(document.getElementById('quality_auroc'), {
+    type:'bar',
+    data:{ labels, datasets: GENS.map(g => ({label:g, data:aurocByGen[g], backgroundColor:GEN_COLORS[g]})) },
+    options: { plugins:{legend:{position:'top'}}, responsive:true, maintainAspectRatio:false,
+               scales:{y:{title:{display:true,text:'TSTR AUROC'}, min:0.4, max:1}} }
+  });
+
+  // table
+  const tbl = document.getElementById('quality_tbl');
+  let html = '<thead><tr><th>Dataset</th><th>Generator</th><th>mean KS ↓</th><th>mean W1 (norm) ↓</th><th>|Δcorr| (mean) ↓</th><th>|Δcorr| (max) ↓</th><th>TSTR AUROC ↑</th></tr></thead><tbody>';
+  for (const ds of DS_ORDER){
+    for (const g of GENS){
+      const r = pickBy(q, {dataset:ds, generator:g});
+      if (!r) continue;
+      html += `<tr><td>${DS_LABELS[ds]||ds}</td><td>${g}</td><td>${fmt(r.mean_ks)}</td><td>${fmt(r.mean_w1)}</td><td>${fmt(r.corr_diff_mean)}</td><td>${fmt(r.corr_diff_max)}</td><td>${fmt(r.tstr_auroc)}</td></tr>`;
+    }
+  }
+  tbl.innerHTML = html + '</tbody>';
+})();
+
+// ---------- Section 4: baseline AUROC ----------
+(function(){
+  const b = DATA.baseline_perf;
+  const labels = DS_ORDER.map(d => DS_LABELS[d] || d);
+  const dsets = MODELS.map(model => {
+    const arr = DS_ORDER.map(ds => {
+      const r = pickBy(b, {dataset:ds, model:model});
+      return r ? r.auroc_mean : null;
+    });
+    return { label:model, data:arr, backgroundColor:MODEL_COLORS[model] };
+  });
+  new Chart(document.getElementById('baseline_auroc'), {
+    type:'bar',
+    data:{ labels, datasets:dsets },
+    options:{ plugins:{legend:{position:'top'}}, responsive:true, maintainAspectRatio:false,
+              scales:{y:{title:{display:true,text:'AUROC (10-seed mean)'}, min:0.5, max:1}} }
+  });
+})();
+
+// ---------- Section 5: drift ----------
+(function(){
+  const rows = DATA.drift;
+  // Heatmap for XGBoost ρ
+  const xgRho = pivot(rows.filter(r => r.model==='XGBoost'), 'dataset','generator','rho_mean');
+  const hm = document.getElementById('drift_heatmap');
+  let html = `<div class="heatmap" style="grid-template-columns: 1.4fr repeat(${GENS.length}, 1fr);">`;
+  html += `<div class="cell head">Dataset \\ Gen</div>`;
+  GENS.forEach(g => html += `<div class="cell head">${g}</div>`);
+  for (const ds of DS_ORDER){
+    html += `<div class="cell head" style="text-align:left;">${DS_LABELS[ds]||ds}</div>`;
+    GENS.forEach(g => {
+      const v = (xgRho[ds] || {})[g];
+      html += `<div class="cell" style="background:${rhoColor(v)};">${fmt(v)}</div>`;
+    });
+  }
+  html += `</div>`;
+  hm.innerHTML = html;
+
+  // Bar chart: rho mean by model (averaged over datasets) for each generator
+  const byModelGen = {}; MODELS.forEach(m=>{ byModelGen[m]={}; GENS.forEach(g=> byModelGen[m][g]=[]); });
+  rows.forEach(r => { if(r.rho_mean!=null) byModelGen[r.model][r.generator].push(r.rho_mean); });
+  const labels = MODELS;
+  const ds_ = GENS.map(g => ({
+    label:g, backgroundColor: GEN_COLORS[g],
+    data: MODELS.map(m => {
+      const a = byModelGen[m][g];
+      return a.length ? a.reduce((x,y)=>x+y,0)/a.length : null;
+    })
+  }));
+  new Chart(document.getElementById('drift_by_model'), {
+    type:'bar',
+    data:{ labels, datasets: ds_ },
+    options:{ plugins:{legend:{position:'top'}}, responsive:true, maintainAspectRatio:false,
+              scales:{y:{title:{display:true,text:'Mean ρ (across datasets)'}, min:-0.5, max:1}} }
+  });
+
+  // Full table
+  const tbl = document.getElementById('drift_tbl');
+  let h = '<thead><tr><th>Dataset</th><th>Model</th><th>Generator</th><th>ρ (mean)</th><th>ρ (std)</th><th>sign agree</th><th>top-5 overlap</th><th>synth AUROC</th><th>mean KS</th></tr></thead><tbody>';
+  const order = [];
+  for (const ds of DS_ORDER) for (const m of MODELS) for (const g of GENS) order.push([ds,m,g]);
+  for (const [ds,model,g] of order){
+    const r = pickBy(rows, {dataset:ds, model:model, generator:g});
+    if (!r) continue;
+    h += `<tr><td>${DS_LABELS[ds]||ds}</td><td>${model}</td><td>${g}</td><td>${fmt(r.rho_mean)}</td><td>${fmt(r.rho_std)}</td><td>${fmt(r.sign_mean)}</td><td>${fmt(r.top5_mean)}</td><td>${fmt(r.auroc_mean)}</td><td>${fmt(r.mean_ks)}</td></tr>`;
+  }
+  tbl.innerHTML = h + '</tbody>';
+})();
+
+// ---------- Section 6: gap heatmap + box ----------
+(function(){
+  const xgGap = pivot(DATA.drift.filter(r=>r.model==='XGBoost'), 'dataset','generator','gap_mean');
+  const hm = document.getElementById('gap_heatmap');
+  let html = `<div class="heatmap" style="grid-template-columns: 1.4fr repeat(${GENS.length}, 1fr);">`;
+  html += `<div class="cell head">Dataset \\ Gen</div>`;
+  GENS.forEach(g => html += `<div class="cell head">${g}</div>`);
+  for (const ds of DS_ORDER){
+    html += `<div class="cell head" style="text-align:left;">${DS_LABELS[ds]||ds}</div>`;
+    GENS.forEach(g => {
+      const v = (xgGap[ds] || {})[g];
+      html += `<div class="cell" style="background:${gapColor(v)};">${fmt(v)}</div>`;
+    });
+  }
+  html += `</div>`;
+  hm.innerHTML = html;
+
+  // simple bar: gap mean by generator (across datasets, XGBoost)
+  const meanByGen = {};
+  GENS.forEach(g=>{
+    const arr = DS_ORDER.map(ds => (xgGap[ds]||{})[g]).filter(v => v !=null);
+    meanByGen[g] = arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : null;
+  });
+  new Chart(document.getElementById('gap_box'), {
+    type:'bar',
+    data:{
+      labels: GENS,
+      datasets:[{ label:'Mean Gap (across datasets, XGBoost)',
+                  data: GENS.map(g => meanByGen[g]),
+                  backgroundColor: GENS.map(g => GEN_COLORS[g]) }]
+    },
+    options:{ plugins:{legend:{display:false}}, responsive:true, maintainAspectRatio:false,
+              scales:{y:{title:{display:true,text:'AUROC − ρ'}, beginAtZero:true}} }
+  });
+})();
+
+// ---------- Section 7: significance ----------
+(function(){
+  const sig = DATA.significance.filter(r => r.model === 'XGBoost');
+  const labels = DS_ORDER.map(d => DS_LABELS[d] || d);
+  const data = DS_ORDER.map(ds => {
+    const subset = sig.filter(r => r.dataset === ds);
+    if (!subset.length) return 0;
+    const sigCount = subset.filter(r => r.significant_p005).length;
+    return sigCount / subset.length;
+  });
+  new Chart(document.getElementById('sig_bar'), {
+    type:'bar',
+    data:{ labels, datasets:[{ label:'Fraction with p<0.05 (XGBoost)',
+                                data, backgroundColor:'#1d4ed8' }]},
+    options:{ plugins:{legend:{display:false}}, responsive:true, maintainAspectRatio:false,
+              scales:{y:{title:{display:true,text:'Fraction'}, min:0, max:1}} }
+  });
+})();
+
+// ---------- Section 8: mechanism table ----------
+(function(){
+  const tbl = document.getElementById('mech_tbl');
+  let h = '<thead><tr><th>Dataset</th><th>Generator</th><th>|Δcorr| mean</th><th>mode collapse ratio</th><th>most collapsed</th><th>target rate shift</th><th>mean KL</th></tr></thead><tbody>';
+  for (const ds of DS_ORDER){
+    for (const g of GENS){
+      const r = pickBy(DATA.mechanisms, {dataset:ds, generator:g});
+      if (!r) continue;
+      const collapsePill = r.mode_collapse_ratio > 10 ? '<span class="pill bad">扩散偏置</span>' : r.mode_collapse_ratio > 2 ? '<span class="pill mid">轻度</span>' : '<span class="pill good">正常</span>';
+      h += `<tr><td>${DS_LABELS[ds]||ds}</td><td>${g}</td><td>${fmt(r.corr_mismatch)}</td><td>${fmt(r.mode_collapse_ratio,2)} ${collapsePill}</td><td>${r.most_collapsed||'—'}</td><td>${fmt(r.target_rate_shift)}</td><td>${fmt(r.mean_kl)}</td></tr>`;
+    }
+  }
+  tbl.innerHTML = h + '</tbody>';
+})();
+
+// ---------- Section 9: correction ----------
+(function(){
+  const ov = DATA.correction_overall.overall || {};
+  document.getElementById('ov_sdc').textContent  = '+' + fmt(ov['SDC-Corr']);
+  document.getElementById('ov_g').textContent    = '+' + fmt(ov['SDC-Guarded']);
+  document.getElementById('ov_fsc').textContent  = '+' + fmt(ov['FSC-Corr']);
+  document.getElementById('ov_fscg').textContent = '+' + fmt(ov['FSC-Guarded']);
+
+  const labelsDs = DS_ORDER.map(d => DS_LABELS[d] || d);
+  const series = [
+    {label:'SDC-Corr',         color:'#1d4ed8', key:'sdc_delta'},
+    {label:'SDC-Guarded',      color:'#0f766e', key:'guarded_delta'},
+    {label:'FSC-Corr (20%)',   color:'#b45309', key:'fsc_delta'},
+    {label:'FSC-Guarded',      color:'#b91c1c', key:'fsc_guarded_delta'},
+  ];
+  const byDs = {};
+  DATA.correction_by_dataset.forEach(r => byDs[r.dataset]=r);
+  new Chart(document.getElementById('corr_by_ds'), {
+    type:'bar',
+    data:{
+      labels: labelsDs,
+      datasets: series.map(s => ({
+        label: s.label, backgroundColor: s.color,
+        data: DS_ORDER.map(ds => byDs[ds] ? byDs[ds][s.key] : null)
+      }))
+    },
+    options:{ plugins:{legend:{position:'top'}}, responsive:true, maintainAspectRatio:false,
+              scales:{y:{title:{display:true,text:'Δρ'}, beginAtZero:true}} }
+  });
+
+  const byGen = {};
+  DATA.correction_by_generator.forEach(r => byGen[r.generator]=r);
+  new Chart(document.getElementById('corr_by_gen'), {
+    type:'bar',
+    data:{
+      labels: GENS,
+      datasets: series.map(s => ({
+        label: s.label, backgroundColor: s.color,
+        data: GENS.map(g => byGen[g] ? byGen[g][s.key] : null)
+      }))
+    },
+    options:{ plugins:{legend:{position:'top'}}, responsive:true, maintainAspectRatio:false,
+              scales:{y:{title:{display:true,text:'Δρ'}, beginAtZero:true}} }
+  });
+
+  // Compare table
+  const tbl = document.getElementById('corr_compare_tbl');
+  let h = '<thead><tr><th>Dataset</th><th>orig ρ</th><th>SDC ρ</th><th>SDC Δρ</th><th>Guard ρ</th><th>Guard Δρ</th><th>FSC ρ</th><th>FSC Δρ</th></tr></thead><tbody>';
+  DATA.correction_by_dataset.forEach(r => {
+    h += `<tr><td>${DS_LABELS[r.dataset]||r.dataset}</td><td>${fmt(r.orig_rho)}</td><td>${fmt(r.sdc_rho)}</td><td><span class="pill ${r.sdc_delta>0?'good':'bad'}">${(r.sdc_delta>0?'+':'')+fmt(r.sdc_delta)}</span></td><td>${fmt(r.guarded_rho)}</td><td><span class="pill ${r.guarded_delta>0?'good':'bad'}">${(r.guarded_delta>0?'+':'')+fmt(r.guarded_delta)}</span></td><td>${fmt(r.fsc_rho)}</td><td><span class="pill ${r.fsc_delta>0?'good':'bad'}">${(r.fsc_delta>0?'+':'')+fmt(r.fsc_delta)}</span></td></tr>`;
+  });
+  tbl.innerHTML = h + '</tbody>';
+})();
+
+// ---------- Section 10: FSC ----------
+(function(){
+  const c = DATA.fsc_curve;
+  const labels = c.map(r => (r.fraction*100).toFixed(0) + '%');
+  new Chart(document.getElementById('fsc_curve'), {
+    type:'line',
+    data:{
+      labels,
+      datasets:[
+        {label:'FSC-Corr Δρ',         data: c.map(r=>r.fsc_delta),         borderColor:'#b45309', backgroundColor:'#b45309', tension:0.2},
+        {label:'FSC-Guarded Δρ',      data: c.map(r=>r.fsc_guarded_delta), borderColor:'#b91c1c', backgroundColor:'#b91c1c', tension:0.2},
+        {label:'Full SDC Δρ (constant)', data: c.map(r=>r.full_delta),     borderColor:'#1d4ed8', backgroundColor:'#1d4ed8', borderDash:[6,6], pointRadius:0}
+      ]
+    },
+    options:{ plugins:{legend:{position:'top'}}, responsive:true, maintainAspectRatio:false,
+              scales:{y:{title:{display:true,text:'Δρ'}, beginAtZero:true}} }
+  });
+  const tbl = document.getElementById('fsc_tbl');
+  let h = '<thead><tr><th>Fraction</th><th>FSC Δρ</th><th>Full Δρ</th><th>Retention</th></tr></thead><tbody>';
+  DATA.fsc_retention.forEach(r => {
+    h += `<tr><td>${(r.fraction*100).toFixed(0)}%</td><td>${fmt(r.fsc_delta)}</td><td>${fmt(r.full_delta)}</td><td><span class="pill ${r.retention>0.8?'good':r.retention>0.5?'mid':'bad'}">${(r.retention*100).toFixed(0)}%</span></td></tr>`;
+  });
+  tbl.innerHTML = h + '</tbody>';
+})();
+
+// ---------- Section 11: fair baseline ----------
+(function(){
+  const c = DATA.fair_baseline_curve;
+  const labels = c.map(r => (r.fraction*100).toFixed(0) + '%');
+  new Chart(document.getElementById('fair_curve'), {
+    type:'line',
+    data:{
+      labels,
+      datasets:[
+        {label:'FSC-Corr',           data: c.map(r=>r.fsc_delta),     borderColor:'#b45309', backgroundColor:'#b45309', tension:0.2},
+        {label:'SHAP Distillation',  data: c.map(r=>r.distill_delta), borderColor:'#0f766e', backgroundColor:'#0f766e', tension:0.2},
+        {label:'Fine-tuning',        data: c.map(r=>r.ft_delta),      borderColor:'#1d4ed8', backgroundColor:'#1d4ed8', tension:0.2},
+        {label:'SDC-Corr (100%)',    data: c.map(r=>r.sdc_delta),     borderColor:'#475569', backgroundColor:'#475569', borderDash:[6,6], pointRadius:0}
+      ]
+    },
+    options:{ plugins:{legend:{position:'top'}}, responsive:true, maintainAspectRatio:false,
+              scales:{y:{title:{display:true,text:'Δρ'}, beginAtZero:true},
+                       x:{title:{display:true,text:'Real data budget'}}} }
+  });
+})();
+
+// ---------- Section 12: ablations ----------
+(function(){
+  const A = DATA.ablation_alpha;
+  const P = DATA.ablation_prior;
+  const S = DATA.ablation_sample;
+  function order(d){ return Object.keys(d); }
+  function vals(d){ return Object.values(d); }
+
+  new Chart(document.getElementById('abl_alpha'),  {
+    type:'bar',
+    data:{ labels: order(A), datasets:[{ label:'Δρ', data: vals(A),
+            backgroundColor: vals(A).map(v=> v>0.2?'#15803d': v>0.1?'#b45309':'#b91c1c') }]},
+    options:{ plugins:{legend:{display:false}}, responsive:true, maintainAspectRatio:false,
+              scales:{y:{title:{display:true,text:'Δρ'}, beginAtZero:true}} }
+  });
+  new Chart(document.getElementById('abl_prior'),  {
+    type:'bar',
+    data:{ labels: order(P), datasets:[{ label:'Δρ', data: vals(P),
+            backgroundColor: vals(P).map(v=> v>0.2?'#15803d': v>0?'#b45309':'#b91c1c') }]},
+    options:{ plugins:{legend:{display:false}}, responsive:true, maintainAspectRatio:false,
+              scales:{y:{title:{display:true,text:'Δρ'}, beginAtZero:true}} }
+  });
+  new Chart(document.getElementById('abl_sample'), {
+    type:'bar',
+    data:{ labels: order(S), datasets:[{ label:'Δρ', data: vals(S),
+            backgroundColor: vals(S).map(v=> v>0.13?'#15803d': v>0.09?'#b45309':'#b91c1c') }]},
+    options:{ plugins:{legend:{display:false}}, responsive:true, maintainAspectRatio:false,
+              scales:{y:{title:{display:true,text:'Δρ'}, beginAtZero:true}} }
+  });
+})();
+
+// ---------- Section 13: extras ----------
+(function(){
+  // interaction heatmap
+  const inter = pivot(DATA.interaction, 'dataset','generator','rho');
+  let h = `<div class="heatmap" style="grid-template-columns: 1.4fr repeat(${GENS.length}, 1fr);">`;
+  h += `<div class="cell head">Dataset \\ Gen</div>`;
+  GENS.forEach(g => h += `<div class="cell head">${g}</div>`);
+  for (const ds of DS_ORDER){
+    h += `<div class="cell head" style="text-align:left;">${DS_LABELS[ds]||ds}</div>`;
+    GENS.forEach(g => {
+      const v = (inter[ds]||{})[g];
+      h += `<div class="cell" style="background:${rhoColor(v)};">${fmt(v)}</div>`;
+    });
+  }
+  h += `</div>`;
+  document.getElementById('inter_heat').innerHTML = h;
+
+  // per-sample cos heat (XGBoost)
+  const ps = pivot(DATA.persample.filter(r => r.model==='XGBoost'), 'dataset','generator','cos_sim');
+  let h2 = `<div class="heatmap" style="grid-template-columns: 1.4fr repeat(${GENS.length}, 1fr);">`;
+  h2 += `<div class="cell head">Dataset \\ Gen</div>`;
+  GENS.forEach(g => h2 += `<div class="cell head">${g}</div>`);
+  for (const ds of DS_ORDER){
+    h2 += `<div class="cell head" style="text-align:left;">${DS_LABELS[ds]||ds}</div>`;
+    GENS.forEach(g => {
+      const v = (ps[ds]||{})[g];
+      h2 += `<div class="cell" style="background:${rhoColor(v)};">${fmt(v)}</div>`;
+    });
+  }
+  h2 += `</div>`;
+  document.getElementById('ps_heat').innerHTML = h2;
+
+  // conditional table
+  const tbl = document.getElementById('cond_tbl');
+  let h3 = '<thead><tr><th>Dataset</th><th>Class</th><th>Generator</th><th>ρ</th><th>sign agree</th><th>n samples</th></tr></thead><tbody>';
+  for (const ds of DS_ORDER){
+    for (const cls of ['class_0','class_1']){
+      for (const g of GENS){
+        const r = pickBy(DATA.conditional, {dataset:ds, class:cls, generator:g});
+        if (!r) continue;
+        h3 += `<tr><td>${DS_LABELS[ds]||ds}</td><td>${cls}</td><td>${g}</td><td>${fmt(r.rho)}</td><td>${fmt(r.sign_agree)}</td><td>${r.n||'—'}</td></tr>`;
+      }
+    }
+  }
+  tbl.innerHTML = h3 + '</tbody>';
+})();
+</script>
+</body>
+</html>
